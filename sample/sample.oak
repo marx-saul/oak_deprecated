@@ -1,0 +1,9 @@
+let v(int) = 0, s(string) :
+{
+	foreach (i; 0 .. n ) {
+		v += i;
+		s ~= toStr i;
+	}
+}
+
+var x = 0;
