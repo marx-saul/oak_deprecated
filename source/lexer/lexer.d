@@ -1,8 +1,8 @@
 module oak.lexer.lexer;
-import std.stdio, std.range, std.ascii;
-import std.algorithm: among;
+import std.stdio, std.range, std.ascii, std.typecons, std.algorithm, std.array;
 import std.meta: aliasSeqOf;
 import std.conv: to;
+import oak.AATree.AATree;
 
 unittest {
 	string code = `
@@ -24,6 +24,8 @@ unittest {
 		7
 		
 		:;+-*/%+=-=*=/=%= <<=>>= .. ...||&&!!= 
+		
+		true false if else when let def
 	`;
 	immutable(dchar)[] lookahead;
 	ulong line_num = 1;
@@ -41,7 +43,7 @@ enum TokenType {
 	identifier,
 	
 	// literal
-	integer, real_number, character, string_,
+	integer, real_number, character, string_literal,
 	true_, false_,
 	
 	// reserved words
@@ -51,7 +53,6 @@ enum TokenType {
 	add, sub, mul, div, mod,    // + - * / %
 	and, or, not,				// && || !
 	eq, neq, ls, gt, leq, geq,	// ==, !=, <, >, <=, >=, 
-	lPar, rPar,                 // ( )
 	composition,				// .  (composition of functions) 
 	dots2,						// .. 
 	right_arrow, 				// -> (right_arrow)
@@ -60,6 +61,7 @@ enum TokenType {
 	
 	// other symbols
 	colon, semicolon, 
+	lPar, rPar,                 // ( )
 	lBrack, rBrack,				// [ ]
 	lBrace, rBrace,				// { }
 	
@@ -75,20 +77,69 @@ struct Token {
     // literal value
     long int_val;
     double real_val;
-    // string string_val; // this is 'str'.
+    alias string_val = str;
 }
+
+// These can be replaced by associative array. But currently dmd does not support compile-time associative array, we use this instead.
+pure @nogc @safe bool string_dictionary_order(string a, string b) {
+	auto n = a.length, m = b.length;
+	foreach (i; 0 .. min(n,m)) {
+		if (a[i] > b[i]) return false;
+		if (a[i] < b[i]) return true;
+	}
+	
+	return m < n;
+}
+
+template StringDict(T) {
+	alias StringDict = AATree!(string, string_dictionary_order, T);
+}
+alias TokenDict = StringDict!(TokenType);
+
+static const reserved_words = new TokenDict(
+	tuple("true", TokenType.true_),
+	tuple("false", TokenType.false_),
+	tuple("if", TokenType.if_),
+	tuple("else", TokenType.else_),
+	tuple("let", TokenType.let),
+	tuple("def", TokenType.def),
+	tuple("when", TokenType.when),
+);
+
+//Tuple!( dchar, immutable(Tuple!(string, "str", TokenType, "type"))[] )
+//Tuple!( dchar, immutable(Tuple!(string, "str", TokenType, "type")[]) )
+
+alias SE = Tuple!(string, "str", TokenType, "type");
+static const reserved_symbols = new AATree!(dchar, (a,b) => a<b, SE[])(
+	tuple(cast(dchar) '+', [SE("+", TokenType.add), SE("+=", TokenType.add_assign)]),
+	tuple(cast(dchar) '-', [SE("-", TokenType.sub), SE("-=", TokenType.sub_assign), SE("->", TokenType.right_arrow)]),
+	tuple(cast(dchar) '*', [SE("*", TokenType.mul), SE("*=", TokenType.mul_assign)]),
+	tuple(cast(dchar) '/', [SE("/", TokenType.div), SE("/=", TokenType.div_assign)]),
+	tuple(cast(dchar) '%', [SE("%", TokenType.mod), SE("%=", TokenType.mod_assign)]),
+	tuple(cast(dchar) '&', [SE("&&", TokenType.and)]),
+	tuple(cast(dchar) '|', [SE("||", TokenType.and)]),
+	tuple(cast(dchar) '!', [SE("!", TokenType.not), SE("!=", TokenType.neq)]),
+	tuple(cast(dchar) '=', [SE("=", TokenType.assign), SE("==", TokenType.eq)]),
+	tuple(cast(dchar) '<', [SE("<", TokenType.ls), SE("<=", TokenType.leq)]),
+	tuple(cast(dchar) '>', [SE(">", TokenType.gt), SE(">=", TokenType.geq)]),
+	tuple(cast(dchar) '.', [SE(".", TokenType.composition), SE("..", TokenType.dots2)]),
+	
+	tuple(cast(dchar) ':', [SE(":", TokenType.colon)]),
+	tuple(cast(dchar) ';', [SE(";", TokenType.semicolon)]),
+	tuple(cast(dchar) '(', [SE("(", TokenType.lPar)]),
+	tuple(cast(dchar) ')', [SE(")", TokenType.rPar)]),
+	tuple(cast(dchar) '[', [SE("[", TokenType.lBrack)]),
+	tuple(cast(dchar) ']', [SE("]", TokenType.rBrack)]),
+	tuple(cast(dchar) '{', [SE("{", TokenType.lBrace)]),
+	tuple(cast(dchar) '}', [SE("}", TokenType.rBrace)]),
+	
+);
 
 Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ulong line_num)	// when characters were looked-ahead, they will be pushed on 'lookahead'
 	if (isInputRange!Range && is(typeof(input.front) : immutable dchar))
 {
-	enum : dchar { EOF = cast(dchar) -1 }
-	/*static immutable reserved_words = [
-		"if" : TokenType.if_,
-		"else" : TokenType.else_,
-		"true" : TokenType.true_,
-		"false" : TokenType.false_,
-		"when" : TokenType.when,
-	];*/
+	enum EOF = cast(dchar) -1;
+	
 	
 	// wrapper for EOF and look-ahead
 	dchar nextChar() {
@@ -190,7 +241,7 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 	
 	Token token;
 	
-	// identifier
+	// identifier or reserved word
 	if (isAlpha(c) || c == '_') {
 		token.type = TokenType.identifier;
 		while (isAlphaNum(c) || c == '_') {
@@ -202,16 +253,7 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 		/*auto ptr = token.str in reserved_words;
 		if (ptr) token.type = *ptr;*/
 		
-		with (TokenType) switch (token.str) {
-			case "if":		token.type = if_;		break;
-			case "else":	token.type = else_;		break;
-			case "true":	token.type = true_;		break;
-			case "false":	token.type = false_;	break;
-			case "when":	token.type = when;		break;
-			case "let":		token.type = let;		break;
-			case "def":		token.type = def;		break;
-			default: break;
-		}
+		if (reserved_words.hasKey(token.str)) token.type = reserved_words[token.str];
 	}
 	
 	// integer, real number
@@ -273,180 +315,46 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 			}
 		}
 	}
-	else if (c == '+') {
-		if (lookAhead() == '=') {
-			nextChar();
-			token.type = TokenType.add_assign;
-			token.str = "+=";
-		}
-		else {
-			token.type = TokenType.add;
-			token.str = "+";
-		}
-	}
-	else if (c == '-') {
-		if (lookAhead() == '=') {
-			nextChar();
-			token.type = TokenType.sub_assign;
-			token.str = "-=";
-		}
-		else if (lookAhead() == '>') {
-			nextChar();
-			token.type = TokenType.right_arrow;
-			token.str = "-=";
-		}
-		else {
-			token.type = TokenType.sub;
-			token.str = "-";
-		}
-	}
-	else if (c == '*') {
-		if (lookAhead() == '=') {
-			nextChar();
-			token.type = TokenType.mul_assign;
-			token.str = "*=";
-		}
-		else {
-			token.type = TokenType.mul_assign;
-			token.str = "*";
-		}
-	}
-	else if (c == '/') {
-		if (lookAhead() == '=') {
-			nextChar();
-			token.type = TokenType.div_assign;
-			token.str = "/=";
-		}
-		else {
-			token.type = TokenType.div;
-			token.str = "/";
-		}
-	}
-	else if (c == '%') {
-		if (lookAhead() == '=') {
-			nextChar();
-			token.type = TokenType.mod_assign;
-			token.str = "%=";
-		}
-		else {
-			token.type = TokenType.mod;
-			token.str = "%";
-		}
-	}
-	else if (c == '&') {
-		if (lookAhead() == '&') {
-			c = nextChar();
-			token.type = TokenType.and;
-			token.str = "&&";
-		}
-		else {
-			token.type = TokenType.error;
-			token.str = "Invalid token : '&" ~ c.to!string ~ "'";
-		}
-	}
-	else if (c == '|') {
-		if (lookAhead() == '|') {
-			c = nextChar();
-			token.type = TokenType.or;
-			token.str = "||";
-		}
-		else {
-			token.type = TokenType.error;
-			token.str = "Invalid token : '|" ~ c.to!string ~ "'";
-		}
-	}
-	else if (c == '!') {
-		if (lookAhead() == '=') {
-			nextChar();
-			token.type = TokenType.neq;
-			token.str = "!=";
-		}
-		else {
-			token.type = TokenType.not;
-			token.str = "!";
-		}
-	}
-	else if (c == '=') {
-		if (lookAhead() == '=') {
-			nextChar();
-			token.type = TokenType.eq;
-			token.str = "==";
-		}
-		else {
-			token.type = TokenType.assign;
-			token.str = "=";
-		}
-	}
-	else if (c == '<') {
-		if (lookAhead() == '=') {
-			nextChar();
-			token.type = TokenType.leq;
-			token.str = "<=";
-		}
-		else {
-			token.type = TokenType.ls;
-			token.str = "<";
-		}
-	}
-	else if (c == '>') {
-		if (lookAhead() == '=') {
-			nextChar();
-			token.type = TokenType.geq;
-			token.str = ">=";
-		}
-		else {
-			token.type = TokenType.gt;
-			token.str = ">";
-		}
-	}
 	
-	else if (c == ';') {
-		token.type = TokenType.semicolon;
-		token.str = ";";
-	}
-	else if (c == ':') {
-		token.type = TokenType.colon;
-		token.str = ":";
-	}
-	else if (c == '(') {
-		token.type = TokenType.lPar;
-		token.str = "(";
-	}
-	else if (c == ')') {
-		token.type = TokenType.rPar;
-		token.str = ")";
-	}
-	else if (c == '[') {
-		token.type = TokenType.lBrack;
-		token.str = "[";
-	}
-	else if (c == ']') {
-		token.type = TokenType.rBrack;
-		token.str = "]";
-	}
-	else if (c == '{') {
-		token.type = TokenType.lBrace;
-		token.str = "{";
-	}
-	else if (c == '}') {
-		token.type = TokenType.rBrace;
-		token.str = "}";
-	}
-	
-	else if (c == '.') {
-		if (lookAhead() == '.') {
-			nextChar();
-			token.type = TokenType.dots2;
-			token.str = "..";
-		}
-		else {
-			token.type = TokenType.composition;
-			token.str = ".";
+	// symbols
+	else if (reserved_symbols.hasKey(c)) {
+		auto SElist = reserved_symbols[c].dup;
+		
+		string s = c.to!string;		// expected to be a head of some token
+		while (true) {
+			// tokens whose head is equal to `s`
+			auto newSElist = SElist.filter!(se => se.str[0 .. min(s.length, $)] == s).array;
+			
+			// by adding one character no token matches.
+			if (newSElist.length == 0) {
+				token.type = SElist[0].type;
+				token.str = s[0 .. $-1];
+				unget(s[$-1]);
+				return token;
+			}
+			SElist = newSElist;
+			
+			// found
+			if (SElist.length == 1 && SElist[0].str.length == s.length /* equivalent to SElist[0].str == s */) {
+				//writeln("\t length 1");
+				token.type = SElist[0].type;
+				token.str = s;
+				return token;
+			}
+			// two or more possible tokens
+			else {
+				//writeln("\t length > 1");
+				// read one letter.
+				c = nextChar();
+				s ~= c.to!string;
+			}
 		}
 	}
 	
 	// EOF
 	else if (c == EOF) token.type = TokenType.end_of_file;
+	
+	
 	return token;
 }
 

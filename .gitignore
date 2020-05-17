@@ -1,0 +1,15 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/oak
+oak.so
+oak.dylib
+oak.dll
+oak.a
+oak.lib
+oak-test-*
+*.exe
+*.o
+*.obj
+*.lst
