@@ -1,12 +1,13 @@
 module oak.lexer.lexer;
-import std.stdio, std.range, std.ascii, std.typecons, std.algorithm, std.array;
+import std.stdio, std.variant, std.range, std.ascii, std.typecons, std.algorithm, std.array;
 import std.meta: aliasSeqOf;
 import std.conv: to;
 import oak.AATree.AATree;
 
 unittest {
 	string code = `
-		a_2;: 234 {let when} ( ) def 0b111 0xF
+		a_2;: 234 {let when} ( ) def 0b111 0xF "abcd\n\\\tefgh"
+		12.3456, 0x0.909 0b10.111;
 		a_32; // comment
 		1 /* comment
 		  */
@@ -23,9 +24,9 @@ unittest {
 		
 		7
 		
-		:;+-*/%+=-=*=/=%= <<=>>= .. ...||&&!!= 
+		:;,+-*/%^^$+=-=*=/=%= <<=>>= .. ...||&&!!= 
 		
-		true false if else when let def
+		true false if else when let var def
 	`;
 	immutable(dchar)[] lookahead;
 	ulong line_num = 1;
@@ -33,12 +34,13 @@ unittest {
 	while (true) {
 		//writeln(code, " |||| lookahead : '", lookahead, "'");
 		auto token = nextToken(code, lookahead, line_num);
-		writeln("'", token.str, "'\t\t", token.type, "\t\t", token.int_val);
+		writeln("'", token.str, "'\t\t", token.type, "\t\t", token.int_val, "\t\t", token.real_val);
 		if (token.type == TokenType.end_of_file) break;
 	}
 }
 
-enum TokenType {
+// when adding a token, alter this enum TokenType, (reserved_words/reserved_symbols), and oak.parser.parse.type_dict
+enum TokenType : uint {
 	error,
 	identifier,
 	
@@ -46,21 +48,30 @@ enum TokenType {
 	integer, real_number, character, string_literal,
 	true_, false_,
 	
+	// type
+	int_, real_, string_, bool_,
+	
 	// reserved words
-	if_, else_, when, let, def,
+	if_, else_, when, let, var, def, any,
     
 	// expression symbols
 	add, sub, mul, div, mod,    // + - * / %
+	pow,						// ^^
+	cat,						// ~ (concatation)
 	and, or, not,				// && || !
 	eq, neq, ls, gt, leq, geq,	// ==, !=, <, >, <=, >=, 
 	composition,				// .  (composition of functions) 
 	dots2,						// .. 
 	right_arrow, 				// -> (right_arrow)
+	dollar,						// $
+	sharp,						// #
+	pipeline,					// |>
+	lambda,						// \
 	assign,						// =
-	add_assign, sub_assign, mul_assign, div_assign, mod_assign, // += -= *= /= %=
+	add_assign, sub_assign, mul_assign, div_assign, mod_assign, cat_assign, // += -= *= /= %= ~=
 	
 	// other symbols
-	colon, semicolon, 
+	colon, semicolon, comma,
 	lPar, rPar,                 // ( )
 	lBrack, rBrack,				// [ ]
 	lBrace, rBrace,				// { }
@@ -78,6 +89,8 @@ struct Token {
     long int_val;
     double real_val;
     alias string_val = str;
+    // will be implemented by this
+    //Variant literal;
 }
 
 // These can be replaced by associative array. But currently dmd does not support compile-time associative array, we use this instead.
@@ -99,11 +112,17 @@ alias TokenDict = StringDict!(TokenType);
 static const reserved_words = new TokenDict(
 	tuple("true", TokenType.true_),
 	tuple("false", TokenType.false_),
+	tuple("int", TokenType.int_),
+	tuple("real", TokenType.real_),
+	tuple("string", TokenType.string_),
+	tuple("bool", TokenType.bool_),
 	tuple("if", TokenType.if_),
 	tuple("else", TokenType.else_),
 	tuple("let", TokenType.let),
+	tuple("var", TokenType.var),
 	tuple("def", TokenType.def),
 	tuple("when", TokenType.when),
+	tuple("any", TokenType.any),
 );
 
 //Tuple!( dchar, immutable(Tuple!(string, "str", TokenType, "type"))[] )
@@ -116,9 +135,14 @@ static const reserved_symbols = new AATree!(dchar, (a,b) => a<b, SE[])(
 	tuple(cast(dchar) '*', [SE("*", TokenType.mul), SE("*=", TokenType.mul_assign)]),
 	tuple(cast(dchar) '/', [SE("/", TokenType.div), SE("/=", TokenType.div_assign)]),
 	tuple(cast(dchar) '%', [SE("%", TokenType.mod), SE("%=", TokenType.mod_assign)]),
+	tuple(cast(dchar) '^', [SE("^^", TokenType.pow)]),
+	tuple(cast(dchar) '~', [SE("~", TokenType.cat), SE("~=", TokenType.cat_assign)]),
 	tuple(cast(dchar) '&', [SE("&&", TokenType.and)]),
-	tuple(cast(dchar) '|', [SE("||", TokenType.and)]),
+	tuple(cast(dchar) '|', [SE("||", TokenType.or), SE("|>", TokenType.pipeline)]),
 	tuple(cast(dchar) '!', [SE("!", TokenType.not), SE("!=", TokenType.neq)]),
+	tuple(cast(dchar) '$', [SE("$", TokenType.dollar)]),
+	tuple(cast(dchar) '#', [SE("#", TokenType.sharp)]),
+	tuple(cast(dchar) '\\', [SE("\\", TokenType.lambda)]),
 	tuple(cast(dchar) '=', [SE("=", TokenType.assign), SE("==", TokenType.eq)]),
 	tuple(cast(dchar) '<', [SE("<", TokenType.ls), SE("<=", TokenType.leq)]),
 	tuple(cast(dchar) '>', [SE(">", TokenType.gt), SE(">=", TokenType.geq)]),
@@ -133,6 +157,20 @@ static const reserved_symbols = new AATree!(dchar, (a,b) => a<b, SE[])(
 	tuple(cast(dchar) '{', [SE("{", TokenType.lBrace)]),
 	tuple(cast(dchar) '}', [SE("}", TokenType.rBrace)]),
 	
+);
+
+static const escape_sequences = new AATree!(dchar, (a,b) => a<b, dchar) (
+	tuple(cast(dchar) '\'',cast(dchar)'\''),
+	tuple(cast(dchar) '"', cast(dchar) '"'),
+	tuple(cast(dchar) '\\',cast(dchar)'\\'),
+	tuple(cast(dchar) '0', cast(dchar) '\0'),
+	tuple(cast(dchar) 'a', cast(dchar) '\a'),
+	tuple(cast(dchar) 'b', cast(dchar) '\b'),
+	tuple(cast(dchar) 'f', cast(dchar) '\f'),
+	tuple(cast(dchar) 'n', cast(dchar) '\n'),
+	tuple(cast(dchar) 'r', cast(dchar) '\r'),
+	tuple(cast(dchar) 't', cast(dchar) '\t'),
+	tuple(cast(dchar) 'v', cast(dchar) '\v'),
 );
 
 Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ulong line_num)	// when characters were looked-ahead, they will be pushed on 'lookahead'
@@ -281,8 +319,36 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 					token.int_val += c - 'A' + 10;
 					token.str ~= c;
 				}
+				// real number
+				else if (c == '.') {
+					double exponent = 1.0;
+					
+					token.str ~= ".";
+					token.type = TokenType.real_number;
+					token.real_val = cast(double) token.int_val;
+					
+					c = nextChar();
+					while (true) {
+						exponent /= 16;
+						if (isDigit(c)) {
+							token.real_val += exponent * (c - '0');
+							token.str ~= c;
+						}
+						else if (c.among!(aliasSeqOf!"abcdef")) {
+							token.real_val += exponent * (c - 'a' + 10);
+							token.str ~= c;
+						}
+						else if (c.among!(aliasSeqOf!"ABCDEF")) {
+							token.real_val += exponent * (c - 'A' + 10);
+							token.str ~= c;
+						}
+						else if (c == '_') { token.str ~= c; }
+						else { unget(c); return token; }
+						c = nextChar();
+					}
+				}
 				else if (c == '_') { token.str ~= c; }
-				else { unget(c); break; }
+				else { unget(c); return token; }
 				c = nextChar();
 			}
 		}
@@ -297,11 +363,32 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 					token.int_val += c - '0';
 					token.str ~= c;
 				}
+				// real number
+				else if (c == '.') {
+					double exponent = 1.0;
+					
+					token.str ~= ".";
+					token.type = TokenType.real_number;
+					token.real_val = cast(double) token.int_val;
+					
+					c = nextChar();
+					while (true) {
+						exponent /= 2;
+						if (c.among!('0', '1')) {
+							token.real_val += exponent * (c - '0');
+							token.str ~= c;
+						}
+						else if (c == '_') { token.str ~= c; }
+						else { unget(c); return token; }
+						c = nextChar();
+					}
+				}
 				else if (c == '_') { token.str ~= c; }
-				else { unget(c); break; }
+				else { unget(c); return token; }
 				c = nextChar();
 			}
 		}
+		// 10
 		else {
 			while (true) {
 				if (isDigit(c)) {
@@ -309,10 +396,51 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 					token.int_val += c - '0';
 					token.str ~= c;
 				}
+				// real number
+				else if (c == '.') {
+					double exponent = 1.0;
+					
+					token.str ~= ".";
+					token.type = TokenType.real_number;
+					token.real_val = cast(double) token.int_val;
+					
+					c = nextChar();
+					while (true) {
+						exponent /= 10;
+						if (c.among!('0', '1')) {
+							token.real_val += exponent * (c - '0');
+							token.str ~= c;
+						}
+						else if (c == '_') { token.str ~= c; }
+						else { unget(c); return token; }
+						c = nextChar();
+					}
+				}
 				else if (c == '_') { token.str ~= c; }
-				else { unget(c); break; }
+				else { unget(c); return token; }
 				c = nextChar();
 			}
+		}
+	}
+	
+	// string literal
+	else if (c == '"') {
+		token.type = TokenType.string_literal;
+		while (true) {
+			c = nextChar();
+			if (c == '\\') {
+				c = nextChar();
+				if (escape_sequences.hasKey(c)) {
+					token.str ~= escape_sequences[c];
+				}
+				// token error: false escape sequence
+				else {
+				}
+			}
+			else if (c == '"') { break; }
+			// token error: no '"'
+			else if (c == EOF) { break; /* error */ }
+			else { token.str ~= c.to!string; }
 		}
 	}
 	
