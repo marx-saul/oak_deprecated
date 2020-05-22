@@ -60,3 +60,7 @@ class ExprNode : Node {
 	}
 	this (TokenType t) { type = NodeType.expr, token.type = t; }
 }
+
+class TypeNode : Node {
+	
+}

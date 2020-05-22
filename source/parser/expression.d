@@ -9,9 +9,12 @@ unittest {
 	
 	//auto token_pusher = new TokenRange!string("f n = n * f (n-1) when n > 0 : 1");
 	//auto token_pusher = new TokenRange!string("a = (b1, b2) when c : d,e");
-	auto token_pusher = new TokenRange!string("a = ($, ()), b");
+	auto token_pusher = new TokenRange!string("a ^^ -b ^^ -c");
 	auto node = getAST(token_pusher);
 	node.stringOfExpression.writeln();
+	
+	token_pusher = new TokenRange!string("a <= b > c");
+	node = getAST(token_pusher);
 	
 	//token_pusher = new TokenRange!string("");
 	//node = getAST(token_pusher);
@@ -64,8 +67,8 @@ OpPrec precedence(TokenType a, TokenType b) {
 			 br = op_ranks[b];
 		if (ar < br) 			return OpPrec.shift;
 		else if (ar > br) 		return OpPrec.reduce;
-		else if (ar % 2 == 1) 	return OpPrec.reduce;
-		else 					return OpPrec.shift;
+		else if (ar % 2 == 1) 	return OpPrec.shift;
+		else 					return OpPrec.reduce;
 	}
 }
 
@@ -182,6 +185,12 @@ ExprNode getAST(Range)(ref Range input)
 					}
 					else {
 						operators[$-1].left = left, operators[$-1].right = right;
+						// exclude a < b >= c
+						with(TokenType)
+							if (operators[$-1].token.type.among!(ls, leq, gt, geq) && left.token.type.among!(ls, leq, gt, geq)) {
+								writeln("Expressions of the form a " ~ operators[$-1].token.str ~ " b " ~ left.token.str~ " c is invalid");
+								break;
+							}
 						nodes[$-2] = operators[$-1];
 						operators.length -= 1; nodes.length -= 1;
 					}
