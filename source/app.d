@@ -1,7 +1,7 @@
-import std.stdio, std.range;
+import std.stdio;
+import parser;
 
 void main() {
-	import oak.lexer;
 	
 }
 

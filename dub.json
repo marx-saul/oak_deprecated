@@ -1,12 +1,9 @@
 {
+	"name": "oak",
+	"description": "a programming language",
+	"license": "Boost",
 	"authors": [
 		"marx-saul"
 	],
 	"copyright": "Copyright © 2020, marx-saul",
-	"dependencies": {
-		"comp_d": "~>0.6.3"
-	},
-	"description": "a programming language",
-	"license": "Boost",
-	"name": "oak"
 }
