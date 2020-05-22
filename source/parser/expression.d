@@ -2,7 +2,7 @@ module parser.expression;
 
 import std.stdio, std.typecons, std.algorithm;
 import aatree, parser.lexer, parser.defs;
-import parser.defs: Node, NodeType;
+import parser.defs;
 
 unittest {
 	import parser.defs : TokenRange;
