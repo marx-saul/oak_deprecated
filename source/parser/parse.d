@@ -1,8 +1,8 @@
 module parser.parse;
 
 import parser.lexer;
-import std.stdio, std.algorithm, std.range, std.traits;
-import parser.expression;
+import std.stdio, std.algorithm;
+import parser.defs, parser.expression;
 
 unittest {
 	//auto ast1 = getAST(new TokenRange!(string)("a + b")); //getAST("s |> n when n > 0 : -n # x . y z");
@@ -10,50 +10,6 @@ unittest {
 	//writeln("#### ast/ast.d");
 }
 
-//alias grammar = parser.grammar;
-
-/* for AST */
-enum NodeType {
-	dummy, expr, /*tuple_expr*/
-}
-class Node {
-	NodeType type;
-	Token token;
-	this (NodeType t = NodeType.init) { type = t; }
-	this (TokenType t) { token.type = t; }
-	this (Token t) { token = t; }
-	this (Token tkn, NodeType tp) { token = tkn, type = tp; } 
-}
-enum isTokenRange(T) =
-	is(ReturnType!((T t) => t.front) == Token) &&
-	is(ReturnType!((T t) => t.empty) == bool) &&
-	is( typeof( { T t; t.popFront(); } ) );
-
-
-class TokenRange(R)
-	if (isInputRange!R && is(ReturnType!((R r) => r.front) : immutable dchar))
-{
-	private R source;
-	private immutable(dchar)[] lookahead;
-	ulong line_num = 1;
-	this (R s) {
-		source = s;
-		token = nextToken(source, lookahead, line_num);
-	}
-	
-	private bool empty_flag = false;
-	private Token token;
-	bool empty() @property {
-		return empty_flag;
-	}
-	Token front() @property {
-		return token;
-	}
-	void popFront() {
-		if (token.type == TokenType.end_of_file) this.empty_flag = true;
-		else token = nextToken(source, lookahead, line_num);
-	}
-}
 
 Node getAST(Range)(Range input)
 	if (isTokenRange!Range)

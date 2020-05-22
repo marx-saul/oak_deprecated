@@ -42,7 +42,7 @@ unittest {
 }
 +/
 
-// when adding a token, alter this enum TokenType, (reserved_words/reserved_symbols), and oak.parser.parse.type_dict
+// when adding a token, alter this enum TokenType, (reserved_words/reserved_symbols)
 enum TokenType : uint {
 	error, dummy,
 	identifier,
