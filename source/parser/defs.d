@@ -52,11 +52,11 @@ class ExprNode : Node {
 	ExprNode left;
 	ExprNode right;
 	ExprNode center;
-	bool tuple_solved;		// check if the tuple is enclosed by parenthesis
+	//bool tuple_solved;		// check if the tuple is enclosed by parenthesis
 	
 	this (Token t, ExprNode l = null, ExprNode c = null, ExprNode r = null) {
 		type = NodeType.expr, token = t, left = l, right = r, center = c;
-		tuple_solved = token.type != TokenType.comma;
+		//tuple_solved = token.type != TokenType.comma;
 	}
 	this (TokenType t) { type = NodeType.expr, token.type = t; }
 }

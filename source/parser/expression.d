@@ -9,7 +9,7 @@ unittest {
 	
 	//auto token_pusher = new TokenRange!string("f n = n * f (n-1) when n > 0 : 1");
 	//auto token_pusher = new TokenRange!string("a = (b1, b2) when c : d,e");
-	auto token_pusher = new TokenRange!string("a ^^ -b ^^ -c");
+	auto token_pusher = new TokenRange!string("(a-b, a) + c ; d + e");
 	auto node = getAST(token_pusher);
 	node.stringOfExpression.writeln();
 	
@@ -85,6 +85,9 @@ ExprNode getAST(Range)(ref Range input)
 	bool op_expected = false;
 	Token[] pushed;				// for unary operators
 	
+	int parenthesis_depth = 0;
+	bool end_parsing = false;
+	
 	Token front() {
 		if (pushed.length > 0) return pushed[0];
 		else return input.front;
@@ -94,9 +97,15 @@ ExprNode getAST(Range)(ref Range input)
 		else input.popFront();
 	}
 	
+	Token token;
+	
 	while (true) {
-		auto token = input.front;
+		if (!end_parsing) token = input.front;
+		else token.type = TokenType.end_of_file, token.str = "EOF";
+		
 	redo_with_token_indicated:
+		if      (token.type == TokenType.lPar) parenthesis_depth++;
+		else if (token.type == TokenType.rPar) parenthesis_depth--;
 		// operator expected
 		if ( op_expected ) {
 			// function application
@@ -139,18 +148,24 @@ ExprNode getAST(Range)(ref Range input)
 					operators.each!(x => write(x.token.str));
 					writeln();
 					
+					// rewritten using parenthesis_depth
 					// `,` in ( .. )
-					if (nodes[$-1].token.type == TokenType.comma) {
-						auto expr_node = nodes[$-1];
-						expr_node.tuple_solved = true;
-					}
+					//if (nodes[$-1].token.type == TokenType.comma) {
+					//	auto expr_node = nodes[$-1];
+					//	expr_node.tuple_solved = true;
+					//}
 				}
 			}
 			// binary operator
 			else if (op_ranks.hasKey(token.type)) {
 				auto cmp = precedence(operators[$-1].token.type, token.type);
+				// comma `,` is not in parenthesis
+				if (token.type == TokenType.comma && parenthesis_depth <= 0) {
+					// give EOF instead.
+					end_parsing = true;
+				}
 				// shift
-				if      (cmp == OpPrec.shift) {
+				else if (cmp == OpPrec.shift) {
 					operators ~= new ExprNode(token);
 					input.popFront();
 					op_expected = false;
@@ -191,6 +206,7 @@ ExprNode getAST(Range)(ref Range input)
 								writeln("Expressions of the form a " ~ operators[$-1].token.str ~ " b " ~ left.token.str~ " c is invalid");
 								break;
 							}
+						
 						nodes[$-2] = operators[$-1];
 						operators.length -= 1; nodes.length -= 1;
 					}
@@ -210,13 +226,13 @@ ExprNode getAST(Range)(ref Range input)
 				else assert(0);
 			}
 			// if giving EOF to the parser make it parse successfully, then stop parsing
-			else if (operators[$-1].token.type == TokenType.dummy) {
-				writeln ("accept");
-				assert (nodes.length == 1);
-				return nodes[0];
-			}
-			// error
-			else { writeln("Invalid expression syntax.", __LINE__); break; }
+			//else if (operators[$-1].token.type == TokenType.dummy) {
+			//	writeln ("accept");
+			//	assert (nodes.length == 1);
+			//	return nodes[0];
+			//}
+			// stop parsing
+			else { end_parsing = true; }
 		}
 		// atom expression expected
 		else {
@@ -294,9 +310,9 @@ string stringOfExpression(ExprNode node) {
 	case when:
 		return " ((" ~ stringOfExpression(node.left) ~ " ) when (" ~ stringOfExpression(node.center) ~ " ) : (" ~ stringOfExpression(node.right) ~ " ))" ; 	
 	
-	case comma:
-		if (node.tuple_solved) { goto default; }
-		else { node.token.str = ",?"; goto default; }
+	//case comma:
+		//if (node.tuple_solved) { goto default; }
+		//else { node.token.str = ",?"; goto default; }
 	
 	default:
 		if (node.left is null && node.center is null && node.right is null ) return " " ~ node.token.str;
