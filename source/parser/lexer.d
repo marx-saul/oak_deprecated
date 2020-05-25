@@ -97,6 +97,7 @@ struct Token {
     TokenType type;
     string str;
     ulong line_num;
+    ulong index_num;
     
     // literal value
     long int_val;
@@ -187,7 +188,7 @@ static const escape_sequences = new AATree!(dchar, (a,b) => a<b, dchar) (
 	tuple(cast(dchar) 'v', cast(dchar) '\v'),
 );
 
-Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ulong line_num)	// when characters were looked-ahead, they will be pushed on 'lookahead'
+Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ulong line_num, ref ulong index_num)	// when characters were looked-ahead, they will be pushed on 'lookahead'
 	if (isInputRange!Range && is(typeof(input.front) : immutable dchar))
 {
 	enum EOF = cast(dchar) -1;
@@ -198,16 +199,19 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 		if (lookahead.length > 0) {
 			auto c = lookahead[0];
 			lookahead = lookahead[1 .. $];
-			debug(lexer) writeln("'", c, "'");
+			//debug(lexer) writeln("'", c, "'");
+			if (c == '\n') ++line_num, index_num = 1;
+			else ++index_num;
 			return c;
 		}
 		else {
 			if (input.empty)
 				return EOF;
 			auto c = input.front;
-			if (c == '\n') ++line_num;
+			if (c == '\n') ++line_num, index_num = 1;
+			else ++index_num;
 			input.popFront();
-			debug(lexer) writeln("'", c, "'");
+			//debug(lexer) writeln("'", c, "'");
 			return c;
 		}
 	}
@@ -222,7 +226,6 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 				else {
 					auto c = input.front;
 					lookahead ~= c;
-					if (c == '\n') ++line_num;
 					input.popFront();
 				}
 			}
@@ -295,7 +298,7 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 	
 	// identifier or reserved word
 	if (isAlpha(c) || c == '_') {
-		token.type = TokenType.identifier;
+		token.type = TokenType.identifier, token.line_num = line_num, token.index_num = index_num;
 		while (isAlphaNum(c) || c == '_') {
 			token.str ~= c;
 			c = nextChar();
@@ -310,7 +313,7 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 	
 	// integer, real number
 	else if (isDigit(c)) {
-		token.type = TokenType.integer;
+		token.type = TokenType.integer, token.line_num = line_num, token.index_num = index_num;
 		
 		// hexadecimal
 		if (c == '0' && lookAhead().among!('x', 'X')) {
@@ -451,7 +454,7 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 	
 	// string literal
 	else if (c == '"') {
-		token.type = TokenType.string_literal;
+		token.type = TokenType.string_literal, token.line_num = line_num, token.index_num = index_num;
 		while (true) {
 			c = nextChar();
 			if (c == '\\') {
@@ -481,8 +484,7 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 			
 			// by adding one character no token matches.
 			if (newSElist.length == 0) {
-				token.type = SElist[0].type;
-				token.str = s[0 .. $-1];
+				token.type = SElist[0].type, token.str = s[0 .. $-1], token.line_num = line_num, token.index_num = index_num;
 				unget(s[$-1]);
 				return token;
 			}
@@ -491,8 +493,7 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 			// found
 			if (SElist.length == 1 && SElist[0].str.length == s.length /* equivalent to SElist[0].str == s */) {
 				//writeln("\t length 1");
-				token.type = SElist[0].type;
-				token.str = s;
+				token.type = SElist[0].type, token.str = s, token.line_num = line_num, token.index_num = index_num;
 				return token;
 			}
 			// two or more possible tokens
@@ -506,8 +507,7 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 	}
 	
 	// EOF
-	else if (c == EOF) token.type = TokenType.end_of_file, token.str = "__EOF__";
-	
+	else if (c == EOF) token.type = TokenType.end_of_file, token.str = "__EOF__", token.line_num = line_num, token.index_num = index_num;
 	
 	return token;
 }

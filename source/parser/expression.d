@@ -11,7 +11,7 @@ unittest {
 	//auto token_pusher = new TokenRange!string("a = (b1, b2) when c : d,e");
 	auto token_pusher = new TokenRange!string("f # a when b : c");
 	auto node = Expression(token_pusher);
-	node.stringOfExpression.writeln();
+	node.stringofExpr().writeln();
 	
 	token_pusher = new TokenRange!string("a <= b > c");
 	node = Expression(token_pusher);
@@ -20,6 +20,11 @@ unittest {
 	//node = getAST(token_pusher);
 	
 	writeln("\n#### parse/expression.d unittest1");
+}
+
+bool isFirstOfExpression(TokenType a) {
+	with(TokenType)
+		return a.among!(add, sub, not, lPar, dollar, identifier, integer, real_number, character, string_literal, true_, false_) != 0;
 }
 
 ExprNode Expression(Range)(ref Range input)
@@ -34,7 +39,9 @@ ExprNode AssignExpression(Range)(ref Range input)
 	auto sharp_expr = SharpExpression(input);
 	with(TokenType) if (input.front.type.among!(assign, add_assign, sub_assign, mul_assign, div_assign, mod_assign)) {
 		auto assign_token = input.front;
-		input.popFront();
+		input.popFront();	// get rid of =
+		// check if the following is the start of expression
+		if (!input.front.type.isFirstOfExpression()) { writeln("An expression is expected after '=' "); return null; }	// error
 		auto assign_expr = AssignExpression(input);
 		return new ExprNode(assign_token, sharp_expr, assign_expr);
 	}
@@ -47,7 +54,9 @@ ExprNode SharpExpression(Range)(ref Range input)
 	auto when_expr = WhenExpression(input);
 	if (input.front.type == TokenType.sharp) {
 		auto sharp_token = input.front;
-		input.popFront();
+		input.popFront();	// get rid of #
+		// check if the following is the start of expression
+		if (!input.front.type.isFirstOfExpression()) { writeln("An expression is expected after '#' "); return null; }	// error
 		auto sharp_expr = SharpExpression(input);
 		return new ExprNode(sharp_token, when_expr, sharp_expr);
 	}
@@ -63,7 +72,9 @@ ExprNode WhenExpression(Range)(ref Range input)
 	auto comma_expr = CommaExpression(input);
 	if (input.front.type == TokenType.when) {
 		auto when_token = input.front;
-		input.popFront();
+		input.popFront();	// get rid of 'when'
+		// check if the following is the start of expression
+		if (!input.front.type.isFirstOfExpression()) { writeln("An expression is expected after 'when' "); return null; }	// error
 		auto comma_expr2 = CommaExpression(input);
 		// colon not found error
 		if (input.front.type != TokenType.colon) {
@@ -72,6 +83,8 @@ ExprNode WhenExpression(Range)(ref Range input)
 		}
 		auto colon_token = input.front;
 		input.popFront();
+		// check if the following is the start of expression
+		if (!input.front.type.isFirstOfExpression()) { writeln("An expression is expected after ':' "); return null; }	// error
 		auto when_expr = WhenExpression(input);
 		return new ExprNode(when_token, comma_expr2, new ExprNode(colon_token, comma_expr, when_expr));
 	}
@@ -128,33 +141,29 @@ OpPrec precedence(TokenType a, TokenType b) {
 	}
 }
 
-bool isFirstOfAtomExpr(TokenType a) {
-	with(TokenType)
-		return a.among!(add, sub, not, lPar, dollar, identifier, integer, real_number, character, string_literal, true_, false_) != 0;
-}
-
 ExprNode CommaExpression(Range)(ref Range input)
 	if (isTokenRange!Range)
 {
 	ExprNode[] nodes;
 	ExprNode[] operators = [new ExprNode(TokenType.dummy)];
 	bool op_expected = false;
-	Token[] pushed;				// for unary operators
+	//Token[] pushed;				// for unary operators
 	
 	int parenthesis_depth = 0;
 	bool end_parsing = false;
 	
-	Token front() {
+	/*Token front() {
 		if (pushed.length > 0) return pushed[0];
 		else return input.front;
 	}
 	void popFront() {
 		if (pushed.length > 0) pushed = pushed[1 .. $];
 		else input.popFront();
-	}
+	}*/
+	
+	assert(input.front.type.isFirstOfExpression());
 	
 	Token token;
-	
 	while (true) {
 		if (!end_parsing) token = input.front;
 		else token.type = TokenType.end_of_file, token.str = "EOF";
@@ -165,7 +174,7 @@ ExprNode CommaExpression(Range)(ref Range input)
 		// operator expected
 		if ( op_expected ) {
 			// function application
-			if ( !token.type.among!(TokenType.add, TokenType.sub) && isFirstOfAtomExpr(token.type) ) {
+			if ( !token.type.among!(TokenType.add, TokenType.sub) && isFirstOfExpression(token.type) ) {
 				// shift virtual token app
 				token.type = TokenType.app, token.str = "app";
 				operators ~= new ExprNode(token);
@@ -316,7 +325,7 @@ ExprNode CommaExpression(Range)(ref Range input)
 			
 			//}
 			// shift
-			else if (token.type.isFirstOfAtomExpr()) {
+			else if (token.type.isFirstOfExpression()) {
 				if (token.type == TokenType.lPar) {
 					operators ~= new ExprNode(token);
 					//writeln("D shift ", token.str);
@@ -360,13 +369,13 @@ ExprNode CommaExpression(Range)(ref Range input)
 	return null;
 }
 
-string stringOfExpression(ExprNode node) {
+string stringofExpr(ExprNode node) {
 	if (node is null) return "";
 	
 	//auto node = cast (ExprNode) n;
 	with(TokenType) switch (node.token.type) {
 	case when:
-		return " ((" ~ stringOfExpression(node.right.left) ~ " ) when (" ~ stringOfExpression(node.left) ~ " ) : (" ~ stringOfExpression(node.right.right) ~ " ))" ; 	
+		return " ((" ~ stringofExpr(node.right.left) ~ " ) when (" ~ stringofExpr(node.left) ~ " ) : (" ~ stringofExpr(node.right.right) ~ " ))" ; 	
 	
 	//case comma:
 		//if (node.tuple_solved) { goto default; }
@@ -374,7 +383,7 @@ string stringOfExpression(ExprNode node) {
 	
 	default:
 		if (node.left is null && node.right is null ) return " " ~ node.token.str;
-		else return " (" ~ stringOfExpression(node.left) ~ " " ~ node.token.str ~ stringOfExpression(node.right) ~ " )";
+		else return " (" ~ stringofExpr(node.left) ~ " " ~ node.token.str ~ stringofExpr(node.right) ~ " )";
 	
 	}
 }

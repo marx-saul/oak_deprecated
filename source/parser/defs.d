@@ -14,10 +14,10 @@ class TokenRange(R)
 {
 	private R source;
 	private immutable(dchar)[] lookahead;
-	ulong line_num = 1;
+	ulong line_num = 1, index_num = 1;
 	this (R s) {
 		source = s;
-		token = nextToken(source, lookahead, line_num);
+		token = nextToken(source, lookahead, line_num, index_num);
 	}
 	
 	private bool empty_flag = false;
@@ -30,7 +30,7 @@ class TokenRange(R)
 	}
 	void popFront() {
 		if (token.type == TokenType.end_of_file) this.empty_flag = true;
-		else token = nextToken(source, lookahead, line_num);
+		else token = nextToken(source, lookahead, line_num, index_num);
 	}
 }
 
@@ -44,7 +44,7 @@ class Node {
 	this (NodeType t = NodeType.init) { type = t; }
 	this (TokenType t) { token.type = t; }
 	this (Token t) { token = t; }
-	this (Token tkn, NodeType tp) { token = tkn, type = tp; } 
+	this (Token tkn, NodeType tp) { token = tkn, type = tp; }
 }
 
 class ExprNode : Node {
@@ -68,4 +68,5 @@ class TypeNode : Node {
 	this (Token t, TypeNode l = null, TypeNode r = null) {
 		type = NodeType.type, token = t, left = l, right = r;
 	}
+	this (TokenType t) { type = NodeType.type, token.type = t; }
 }
