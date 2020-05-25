@@ -171,7 +171,6 @@ static const reserved_symbols = new AATree!(dchar, (a,b) => a<b, SE[])(
 	tuple(cast(dchar) ']', [SE("]", TokenType.rBrack)]),
 	tuple(cast(dchar) '{', [SE("{", TokenType.lBrace)]),
 	tuple(cast(dchar) '}', [SE("}", TokenType.rBrace)]),
-	
 );
 
 static const escape_sequences = new AATree!(dchar, (a,b) => a<b, dchar) (

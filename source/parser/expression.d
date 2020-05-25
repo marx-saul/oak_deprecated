@@ -9,17 +9,73 @@ unittest {
 	
 	//auto token_pusher = new TokenRange!string("f n = n * f (n-1) when n > 0 : 1");
 	//auto token_pusher = new TokenRange!string("a = (b1, b2) when c : d,e");
-	auto token_pusher = new TokenRange!string("(a-b, a) + c ; d + e");
-	auto node = getAST(token_pusher);
+	auto token_pusher = new TokenRange!string("f # a when b : c");
+	auto node = Expression(token_pusher);
 	node.stringOfExpression.writeln();
 	
 	token_pusher = new TokenRange!string("a <= b > c");
-	node = getAST(token_pusher);
+	node = Expression(token_pusher);
 	
 	//token_pusher = new TokenRange!string("");
 	//node = getAST(token_pusher);
 	
 	writeln("\n#### parse/expression.d unittest1");
+}
+
+ExprNode Expression(Range)(ref Range input)
+	if (isTokenRange!Range)
+{
+	return AssignExpression(input);
+}
+
+ExprNode AssignExpression(Range)(ref Range input)
+	if (isTokenRange!Range)
+{
+	auto sharp_expr = SharpExpression(input);
+	with(TokenType) if (input.front.type.among!(assign, add_assign, sub_assign, mul_assign, div_assign, mod_assign)) {
+		auto assign_token = input.front;
+		input.popFront();
+		auto assign_expr = AssignExpression(input);
+		return new ExprNode(assign_token, sharp_expr, assign_expr);
+	}
+	else return sharp_expr;
+}
+
+ExprNode SharpExpression(Range)(ref Range input)
+	if (isTokenRange!Range)
+{
+	auto when_expr = WhenExpression(input);
+	if (input.front.type == TokenType.sharp) {
+		auto sharp_token = input.front;
+		input.popFront();
+		auto sharp_expr = SharpExpression(input);
+		return new ExprNode(sharp_token, when_expr, sharp_expr);
+	}
+	else return when_expr;
+}
+
+// WhenExpression:
+//     CommaExpression when CommaExpression : WhenExpression
+//     CommaExpression
+ExprNode WhenExpression(Range)(ref Range input)
+	if (isTokenRange!Range)
+{
+	auto comma_expr = CommaExpression(input);
+	if (input.front.type == TokenType.when) {
+		auto when_token = input.front;
+		input.popFront();
+		auto comma_expr2 = CommaExpression(input);
+		// colon not found error
+		if (input.front.type != TokenType.colon) {
+			writeln("colon not found");
+			return null;
+		}
+		auto colon_token = input.front;
+		input.popFront();
+		auto when_expr = WhenExpression(input);
+		return new ExprNode(when_token, comma_expr2, new ExprNode(colon_token, comma_expr, when_expr));
+	}
+	else return comma_expr;
 }
 
 // right associative is odd, left associative is even
@@ -28,12 +84,12 @@ static const op_ranks = new AATree!(TokenType, (a,b)=>a<b, int)(
 	tuple(TokenType.end_of_file, 0),
 	
 	tuple(TokenType.lPar, 50),
-	tuple(TokenType.assign, 101), tuple(TokenType.add_assign, 101), tuple(TokenType.sub_assign, 101), tuple(TokenType.cat_assign, 101),
-	tuple(TokenType.mul_assign, 101), tuple(TokenType.div_assign, 101), tuple(TokenType.mod_assign, 101), 
-	tuple(TokenType.colon, 150),
-	tuple(TokenType.comma, 201),
-	tuple(TokenType.sharp, 301),
-	tuple(TokenType.when,  401),
+	//tuple(TokenType.assign, 101), tuple(TokenType.add_assign, 101), tuple(TokenType.sub_assign, 101), tuple(TokenType.cat_assign, 101),
+	//tuple(TokenType.mul_assign, 101), tuple(TokenType.div_assign, 101), tuple(TokenType.mod_assign, 101), 
+	//tuple(TokenType.colon, 150),
+	//tuple(TokenType.sharp, 201),
+	//tuple(TokenType.when,  301),
+	tuple(TokenType.comma, 400),
 	tuple(TokenType.pipeline, 500),
 	tuple(TokenType.or,  600),
 	tuple(TokenType.and, 700),
@@ -77,7 +133,7 @@ bool isFirstOfAtomExpr(TokenType a) {
 		return a.among!(add, sub, not, lPar, dollar, identifier, integer, real_number, character, string_literal, true_, false_) != 0;
 }
 
-ExprNode getAST(Range)(ref Range input)
+ExprNode CommaExpression(Range)(ref Range input)
 	if (isTokenRange!Range)
 {
 	ExprNode[] nodes;
@@ -115,25 +171,25 @@ ExprNode getAST(Range)(ref Range input)
 				operators ~= new ExprNode(token);
 				op_expected = false;
 				
-				writeln("A shift app");
-				nodes.each!(x => write(x.token.str, " "));
-				write(" ///// ");
-				operators.each!(x => write(x.token.str, " "));
-				writeln();
+				//writeln("A shift app");
+				//nodes.each!(x => write(x.token.str, " "));
+				//write(" ///// ");
+				//operators.each!(x => write(x.token.str, " "));
+				//writeln();
 			}
 			// `)`
 			else if (token.type == TokenType.rPar) {
 				// matched with `(`
 				if (operators[$-1].token.type == TokenType.lPar) {
 					operators.length -= 1;
-					writeln("matched with (");
+					//writeln("matched with (");
 					input.popFront();
 				}
 				// extra `)` error
-				//else if (operators[$-1].token.type == TokenType.rPar) {
-				//	writeln("extra ')' was found.");
-				//	break;
-				//}
+				else if (parenthesis_depth < 0) {
+					//writeln("extra ')' was found.");
+					end_parsing = true;
+				}
 				// reduce
 				else if (op_ranks.hasKey(operators[$-1].token.type)) {
 					auto right = nodes[$-1];
@@ -142,11 +198,13 @@ ExprNode getAST(Range)(ref Range input)
 					nodes[$-2] = operators[$-1];
 					operators.length -= 1; nodes.length -= 1;
 					
-					writeln("A reduce");
-					nodes.each!(x => write(x.token.str));
-					write(" ///// ");
-					operators.each!(x => write(x.token.str));
-					writeln();
+					
+					
+					//writeln("A reduce");
+					//nodes.each!(x => write(x.token.str));
+					//write(" ///// ");
+					//operators.each!(x => write(x.token.str));
+					//writeln();
 					
 					// rewritten using parenthesis_depth
 					// `,` in ( .. )
@@ -170,11 +228,11 @@ ExprNode getAST(Range)(ref Range input)
 					input.popFront();
 					op_expected = false;
 					
-					writeln("B shift ", token.str);
-					nodes.each!(x => write(x.token.str, " "));
-					write(" ///// ");
-					operators.each!(x => write(x.token.str, " "));
-					writeln();
+					//writeln("B shift ", token.str);
+					//nodes.each!(x => write(x.token.str, " "));
+					//write(" ///// ");
+					//operators.each!(x => write(x.token.str, " "));
+					//writeln();
 				}
 				// reduce
 				else if (cmp == OpPrec.reduce) {
@@ -183,7 +241,7 @@ ExprNode getAST(Range)(ref Range input)
 					
 					// check E when E' : E''.
 					// it is processed as (E when E') : E''
-					if (operators[$-1].token.type == TokenType.colon) {
+					/*if (operators[$-1].token.type == TokenType.colon) {
 						// error
 						if (left.token.type != TokenType.when) {
 							writeln("'when' corresponding to ':' not found.");
@@ -197,29 +255,29 @@ ExprNode getAST(Range)(ref Range input)
 							nodes[$-2] = when;
 							operators.length -= 1; nodes.length -= 1;
 						}
-					}
-					else {
-						operators[$-1].left = left, operators[$-1].right = right;
-						// exclude a < b >= c
-						with(TokenType)
-							if (operators[$-1].token.type.among!(ls, leq, gt, geq) && left.token.type.among!(ls, leq, gt, geq)) {
-								writeln("Expressions of the form a " ~ operators[$-1].token.str ~ " b " ~ left.token.str~ " c is invalid");
-								break;
-							}
-						
-						nodes[$-2] = operators[$-1];
-						operators.length -= 1; nodes.length -= 1;
-					}
+					}*/
 					
-					writeln("B reduce");
-					nodes.each!(x => write(x.token.str, " "));
-					write(" ///// ");
-					operators.each!(x => write(x.token.str, " "));
-					writeln();
+					operators[$-1].left = left, operators[$-1].right = right;
+					
+					// exclude a < b >= c
+					with(TokenType)
+						if (operators[$-1].token.type.among!(ls, leq, gt, geq) && left.token.type.among!(ls, leq, gt, geq)) {
+							writeln("Expressions of the form a " ~ operators[$-1].token.str ~ " b " ~ left.token.str~ " c is invalid");
+							break;
+						}
+					
+					nodes[$-2] = operators[$-1];
+					operators.length -= 1; nodes.length -= 1;				
+					
+					//writeln("B reduce");
+					//nodes.each!(x => write(x.token.str, " "));
+					//write(" ///// ");
+					//operators.each!(x => write(x.token.str, " "));
+					//writeln();
 				}
 				// accept!
 				else if (cmp == OpPrec.accept) {
-					writeln("accept");
+					//writeln("accept");
 					assert (nodes.length == 1);
 					return nodes[0];
 				}
@@ -236,8 +294,8 @@ ExprNode getAST(Range)(ref Range input)
 		}
 		// atom expression expected
 		else {
-			// unary +, -, ++, --, !
-			if (token.type.among!(TokenType.add, TokenType.sub, TokenType.not)) {
+			// unary +, -, !, &, *
+			if (token.type.among!(TokenType.add, TokenType.sub, TokenType.not, TokenType.and, TokenType.mul)) {
 				// shift the operator and then read unary 
 				// idea is to regard -a as `- unary_op a`
 				token.str = "u" ~ token.str;
@@ -245,11 +303,11 @@ ExprNode getAST(Range)(ref Range input)
 				token.type = TokenType.unary_op, token.str = "unary_op";
 				op_expected = true;
 				
-				writeln("C shift ", token.str);
-				nodes.each!(x => write(x.token.str, " "));
-				write(" ///// ");
-				operators.each!(x => write(x.token.str, " "));
-				writeln();
+				//writeln("C shift ", token.str);
+				//nodes.each!(x => write(x.token.str, " "));
+				//write(" ///// ");
+				//operators.each!(x => write(x.token.str, " "));
+				//writeln();
 				
 				goto redo_with_token_indicated;
 			}
@@ -261,21 +319,21 @@ ExprNode getAST(Range)(ref Range input)
 			else if (token.type.isFirstOfAtomExpr()) {
 				if (token.type == TokenType.lPar) {
 					operators ~= new ExprNode(token);
-					writeln("D shift ", token.str);
-					nodes.each!(x => write(x.token.str, " "));
-					write(" ///// ");
-					operators.each!(x => write(x.token.str, " "));
-					writeln();
+					//writeln("D shift ", token.str);
+					//nodes.each!(x => write(x.token.str, " "));
+					//write(" ///// ");
+					//operators.each!(x => write(x.token.str, " "));
+					//writeln();
 				}
 				else {
 					nodes ~= new ExprNode(token);
 					op_expected = true;
 					
-					writeln("E shift ", token.str);
-					nodes.each!(x => write(x.token.str, " "));
-					write(" ///// ");
-					operators.each!(x => write(x.token.str, " "));
-					writeln();
+					//writeln("E shift ", token.str);
+					//nodes.each!(x => write(x.token.str, " "));
+					//write(" ///// ");
+					//operators.each!(x => write(x.token.str, " "));
+					//writeln();
 				}
 				
 				input.popFront();
@@ -287,11 +345,11 @@ ExprNode getAST(Range)(ref Range input)
 				operators.length -= 1;
 				input.popFront();
 				
-				writeln("F shift ", token.str);
-				nodes.each!(x => write(x.token.str, " "));
-				write(" ///// ");
-				operators.each!(x => write(x.token.str, " "));
-				writeln();
+				//writeln("F shift ", token.str);
+				//nodes.each!(x => write(x.token.str, " "));
+				//write(" ///// ");
+				//operators.each!(x => write(x.token.str, " "));
+				//writeln();
 				
 				op_expected = true;
 			}
@@ -308,14 +366,14 @@ string stringOfExpression(ExprNode node) {
 	//auto node = cast (ExprNode) n;
 	with(TokenType) switch (node.token.type) {
 	case when:
-		return " ((" ~ stringOfExpression(node.left) ~ " ) when (" ~ stringOfExpression(node.center) ~ " ) : (" ~ stringOfExpression(node.right) ~ " ))" ; 	
+		return " ((" ~ stringOfExpression(node.right.left) ~ " ) when (" ~ stringOfExpression(node.left) ~ " ) : (" ~ stringOfExpression(node.right.right) ~ " ))" ; 	
 	
 	//case comma:
 		//if (node.tuple_solved) { goto default; }
 		//else { node.token.str = ",?"; goto default; }
 	
 	default:
-		if (node.left is null && node.center is null && node.right is null ) return " " ~ node.token.str;
+		if (node.left is null && node.right is null ) return " " ~ node.token.str;
 		else return " (" ~ stringOfExpression(node.left) ~ " " ~ node.token.str ~ stringOfExpression(node.right) ~ " )";
 	
 	}

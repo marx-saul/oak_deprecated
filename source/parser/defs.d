@@ -36,7 +36,7 @@ class TokenRange(R)
 
 /* for AST */
 enum NodeType {
-	dummy, expr, /*tuple_expr*/
+	dummy, expr, type,
 }
 class Node {
 	NodeType type;
@@ -51,16 +51,21 @@ class ExprNode : Node {
 	// unary expression is expressed by unary_op
 	ExprNode left;
 	ExprNode right;
-	ExprNode center;
+	//ExprNode center;			// a when b : c is when.left = colon, when.right = b, colon.left = a, colon.right = c
 	//bool tuple_solved;		// check if the tuple is enclosed by parenthesis
 	
-	this (Token t, ExprNode l = null, ExprNode c = null, ExprNode r = null) {
-		type = NodeType.expr, token = t, left = l, right = r, center = c;
+	this (Token t, ExprNode l = null, ExprNode r = null) {
+		type = NodeType.expr, token = t, left = l, right = r; //center = c;
 		//tuple_solved = token.type != TokenType.comma;
 	}
 	this (TokenType t) { type = NodeType.expr, token.type = t; }
 }
 
 class TypeNode : Node {
+	TypeNode left;
+	TypeNode right;
 	
+	this (Token t, TypeNode l = null, TypeNode r = null) {
+		type = NodeType.type, token = t, left = l, right = r;
+	}
 }
