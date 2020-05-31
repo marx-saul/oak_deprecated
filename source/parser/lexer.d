@@ -48,27 +48,28 @@ enum TokenType : uint {
 	identifier,
 	
 	// literal
-	integer, real_number, character, string_literal,
+	integer, real_number, /*character,*/ string_literal,
 	true_, false_,
 	
 	// type
 	int_, real_, string_, bool_,
 	
 	// reserved words
-	if_, else_, when, let, var, def, any,
+	if_, else_, when, let, var, def, any, this_,
     
 	// expression symbols
 	add, sub, mul, div, mod,    // + - * / %
 	//inc, dec,					// ++ --
 	pow,						// ^^
 	cat,						// ~ (concatation)
-	and, or, not,				// && || !
+	and, or, not, 				// && || !
 	eq, neq, ls, gt, leq, geq,	// ==, !=, <, >, <=, >=, 
 	composition,				// @  (composition of functions) 
-	dot,						// .
-	dots2,						// ..
+	dot, dotdot,				// . ..
 	right_arrow, 				// -> (right_arrow)
 	indexing,					// !!
+	template_instance_type, 	// ?
+	template_instance_expr,		// ??
 	dollar,						// $
 	sharp,						// #
 	pipeline,					// |>
@@ -137,6 +138,7 @@ static const reserved_words = new TokenDict(
 	tuple("def", TokenType.def),
 	tuple("when", TokenType.when),
 	tuple("any", TokenType.any),
+	tuple("this", TokenType.this_),
 );
 
 //Tuple!( dchar, immutable(Tuple!(string, "str", TokenType, "type"))[] )
@@ -154,6 +156,7 @@ static const reserved_symbols = new AATree!(dchar, (a,b) => a<b, SE[])(
 	tuple(cast(dchar) '&', [SE("&&", TokenType.and)]),
 	tuple(cast(dchar) '|', [SE("||", TokenType.or), SE("|>", TokenType.pipeline)]),
 	tuple(cast(dchar) '!', [SE("!", TokenType.not), SE("!=", TokenType.neq), SE("!!", TokenType.indexing)]),
+	tuple(cast(dchar) '?', [SE("?", TokenType.template_instance_type), SE("??", TokenType.template_instance_expr)]),
 	tuple(cast(dchar) '$', [SE("$", TokenType.dollar)]),
 	tuple(cast(dchar) '#', [SE("#", TokenType.sharp)]),
 	tuple(cast(dchar) ',', [SE(",", TokenType.comma)]),
@@ -161,7 +164,7 @@ static const reserved_symbols = new AATree!(dchar, (a,b) => a<b, SE[])(
 	tuple(cast(dchar) '=', [SE("=", TokenType.assign), SE("==", TokenType.eq)]),
 	tuple(cast(dchar) '<', [SE("<", TokenType.ls), SE("<=", TokenType.leq)]),
 	tuple(cast(dchar) '>', [SE(">", TokenType.gt), SE(">=", TokenType.geq)]),
-	tuple(cast(dchar) '.', [SE(".", TokenType.dot), SE("..", TokenType.dots2)]),
+	tuple(cast(dchar) '.', [SE(".", TokenType.dot), SE("..", TokenType.dotdot)]),
 	tuple(cast(dchar) '@', [SE("@", TokenType.composition)]),
 	
 	tuple(cast(dchar) ':', [SE(":", TokenType.colon)]),

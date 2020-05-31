@@ -1,10 +1,10 @@
 module parser.type;
 
 import std.stdio, std.typecons, std.algorithm;
-import aatree, parser.lexer, parser.defs;
-import parser.defs;
+import parser.lexer, parser.defs;
 
 unittest {
+	writeln("\n#### parse/type.d unittest1");
 	import parser.defs : TokenRange;
 	
 	//auto token_pusher = new TokenRange!string("f -> int[][string[a -> b]]");
@@ -12,13 +12,21 @@ unittest {
 	auto token_pusher = new TokenRange!string("a[][int]");
 	auto node = Type(token_pusher);
 	node.stringofType().writeln();
-	
-	writeln("\n#### parse/type.d unittest1");
 }
 
 /*
 Type:
+	TemplateType
+
+TemplateType:
+	identifier TemplateArguments
 	FunctionType
+
+TemplateArguments:
+	!  FunctionType
+	!! FunctionType
+	TemplateArguments !  FunctionType
+	TemplateArguments !! FunctionType
 
 FunctionType:
 	VarType -> FunctionType
@@ -62,10 +70,18 @@ bool isFirstOfType(TokenType t) {
 	with(TokenType) return t.among!(identifier, int_, real_, string_, bool_, lPar, var) != 0;
 }
 
-TypeNode Type(Range)(ref Range input)
+alias Type = TemplateType;
+
+TypeNode TemplateType(Range)(ref Range input)
 	if (isTokenRange!Range)
 {
-	return FunctionType(input);
+	// 
+	with(TokenType)
+	if (input.front.type == identifier && input.lookahead.type.among!(template_instance_expr, template_instance_type)) {
+		assert(0, "?, ?? type not implemented yet");
+	}
+	else return FunctionType(input);
+	
 }
 
 TypeNode FunctionType(Range)(ref Range input)
@@ -179,7 +195,7 @@ TypeNode TupleType(Range)(ref Range input)
 		return new TypeNode(empty_tuple);
 	}
 	// check if the following is the start of type
-	else if (!input.front.type.isFirstOfType()) { writeln("A type is expected after (, not ", input.front.str); return null; }	// error
+	else if (!input.front.type.isFirstOfType()) { writeln("A type is expected after '(', not ", input.front.str); return null; }	// error
 	
 	TypeNode top = null;
 	TypeNode bottom = Type(input);
@@ -213,20 +229,22 @@ TypeNode TupleType(Range)(ref Range input)
 	else return top;
 }
 
-string stringofType(TypeNode node) {
-	if (node is null) return "";
+string stringofType(Node n) {
+	import parser.defs: stringofNode;
+	if (n is null) return "";
 	
+	auto node = cast(TypeNode) n;
 	//auto node = cast (ExprNode) n;
 	with(TokenType) switch (node.token.type) {
 	case lBrack:
-		return stringofType(node.left) ~ "[" ~ stringofType(node.right) ~ "]";
+		return stringofNode(node.left) ~ "[" ~ stringofNode(node.right) ~ "]";
 	case mul:
-		return stringofType(node.left) ~ "*";
+		return stringofNode(node.left) ~ "*";
 	case var:
-		return "var (" ~ stringofType(node.left) ~ ")";
+		return "var (" ~ stringofNode(node.left) ~ ")";
 	default:
 		if (node.left is null && node.right is null ) return "" ~ node.token.str;
-		else return "(" ~ stringofType(node.left) ~ "" ~ node.token.str ~ stringofType(node.right) ~ ")";
+		else return "(" ~ stringofNode(node.left) ~ "" ~ node.token.str ~ stringofNode(node.right) ~ ")";
 	
 	}
 }
