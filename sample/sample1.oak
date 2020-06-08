@@ -7,3 +7,9 @@ let v(int) = 0, s(string) :
 }
 
 var x = 0;
+
+func factorial:int n:int (n>=0) =
+	n * factorial(n-1) when n > 0 else
+	1
+
+

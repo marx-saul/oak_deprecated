@@ -9,30 +9,45 @@ unittest {
 	
 	//auto token_pusher = new TokenRange!string("def f:int 0 = 1");
 	//auto token_pusher = new TokenRange!string("def f:int n:int = n * f(n-1)");
-	auto token_pusher = new TokenRange!string("def anti_compose:(a->c) f:a->b g:b->c = g.f");
-	auto node = FunctionDeclaration(token_pusher);
+	auto token_pusher = new TokenRange!string("func anti_compose:a->c f:a->b g:b->c = g.f");
+	auto node = FunctionProcedureDeclaration(token_pusher);
 	node.stringofFunction().writeln();
+
+	token_pusher = new TokenRange!string("let w, x: (a->int)->a, y = \\t = 2*t, z:string = \"a string\";");
+	node = LetVarDeclaration(token_pusher);
+	node.stringofVariables().writeln();
 }
 
 /*
-LetDeclaration:
+LetVarDeclaration:
+	let IdentifierWithTypeDeclaration ;
+	var IdentifierWithTypeDeclaration ;
 	let IdentifierDeclaration ;
-
-VarDeclaration:
 	var IdentifierDeclaration ;
+
+IdentifierWithTypeDeclarations:
+	IdentifierWithTypeDeclaration , IdentifierWithTypeDeclarations
+	IdentifierWithTypeDeclaration
+
+IdentifierWithTypeDeclaration:
+	identifier : Type
+	identifier : Type = Expression
 
 IdentifierDeclarations:
 	IdentifierDeclaration , IdentifierDeclarations
 	IdentifierDeclaration
 
 IdentifierDeclaration:
-	identifier : Type
-	identifier : Type = Expression
+	identifier
+	identifier = Expression
 
 
-FunctionDeclaration:
-	def identifier : Type FunctionArgumentsDeclarations = Expression ;
-	def identifier        FunctionArgumentsDeclarations = Expression ;
+FunctionProcedureDeclaration:
+	func identifier : Type FunctionArgumentsDeclarations = Expression ;
+	func identifier        FunctionArgumentsDeclarations = Expression ;
+	proc identifier : Type FunctionArgumentsDeclarations = Expression ;
+	proc identifier        FunctionArgumentsDeclarations = Expression ;
+
 
 FunctionArgumentsDeclarations:
 	FunctionArgumentsDeclaration FunctionArgumentdeclarations
@@ -40,26 +55,104 @@ FunctionArgumentsDeclarations:
 
 FunctionArgumentsDeclaration:
 	identifier
-	identifier ( NonAssignExpression )
+	identifier ( Expression )
 	identifier : Type
-	identifier : Type ( NonAssignExpression )
+	identifier : Type ( Expression )
 	any
 	any : Type
 	Literal
 */
 
-FunctionNode FunctionDeclaration(Range)(ref Range input)
+/*
+let w, x:S, y = E, z:T = E';
+has AST:
+let
+|- w
+   |- null
+   |- null
+
+|- x
+   |- S
+   |- null
+
+|- y
+   |- null
+   |- E
+
+|- z
+   |- T
+   |- E
+
+
+let:T x = E, y = E'
+has AST:
+let
+|- x
+   |- T
+   |- E
+
+|- y
+   |- T
+   |- E'
+
+*/
+
+/*
+f:T w x:S y(E') z:R(E'') = E
+has AST:
+f
+|- T
+
+|- w
+   |- null
+   |- null
+
+|- x
+   |- S
+   |- null
+
+|- y
+   |- null
+   |- E'
+
+|- z
+   |- R
+   |- E''
+
+|- E
+
+*********************
+
+g any 3 any:T = F
+has AST :
+g
+|- null
+
+|- any
+   |- null
+   |- null
+
+|- 3
+
+|- any
+   |- T
+   |- null
+   
+|- F
+
+*/
+
+Node FunctionProcedureDeclaration(Range)(ref Range input)
 	if (isTokenRange!Range)
 {
-	assert (input.front.type == TokenType.def);
-	input.popFront();	// get rid of def
+	input.popFront();	// get rid of func/proc
 	
 	// error
 	if (input.front.type != TokenType.identifier) {
-		writeln("An identifier is expected after def, not " ~ input.front.str);
+		writeln("An identifier is expected after 'func', not " ~ input.front.str);
 		return null;
 	}
-	auto func_node = new FunctionNode(input.front.str);
+	auto func_node = new Node(input.front);
 	input.popFront();	// get rid of id
 	// : Type
 	if (input.front.type == TokenType.colon) {
@@ -72,8 +165,9 @@ FunctionNode FunctionDeclaration(Range)(ref Range input)
 			return null;
 		}
 		auto type = Type(input);
-		func_node.return_type = type;
+		func_node.child ~= type;
 	}
+	else func_node.child ~= null;
 	
 	FunctionArgumentsDeclarations(input, func_node);
 	
@@ -81,19 +175,19 @@ FunctionNode FunctionDeclaration(Range)(ref Range input)
 	if (input.front.type == TokenType.assign) {
 		input.popFront();	// get rid of =
 		import parser.expression: Expression;
-		func_node.func_body = Expression(input);
+		func_node.child ~= Expression(input);
 	}
 	// block statements
 	// else if (input.front.type == TokenType.assign) {}
 	// error
 	else {
-		writeln("= is expected after def declaration, not " ~ input.front.str);
+		writeln("= is expected after 'func' declaration, not " ~ input.front.str);
 	}
 	
 	return func_node;
 }
 
-void FunctionArgumentsDeclarations(Range)(ref Range input, ref FunctionNode func_node) {
+void FunctionArgumentsDeclarations(Range)(ref Range input, ref Node func_node, bool allow_condition = true, bool allow_literal = true) {
 	import parser.expression: Expression;
 	import parser.type: Type;
 	
@@ -101,13 +195,13 @@ void FunctionArgumentsDeclarations(Range)(ref Range input, ref FunctionNode func
 	while (true) {
 		// id
 		if (input.front.type == identifier) {
-			func_node.args ~= input.front.str;
+			func_node.child ~= new Node(input.front);
+			func_node.child[$-1].child.length = 2;
 			input.popFront();	// get rid of id
 			// ( Expression )
-			if (input.front.type == lPar) {
-				func_node.args_types ~= null;
+			if (allow_condition && input.front.type == lPar) {
 				input.popFront();	// get rid of (
-				func_node.args_conditions ~= Expression(input);
+				func_node.child[$-1].child[1] = Expression(input);
 				if (input.front.type != rPar) {
 					writeln("Enclosure of a function argument condition ) was not found.");
 				}
@@ -115,68 +209,196 @@ void FunctionArgumentsDeclarations(Range)(ref Range input, ref FunctionNode func
 			// : Type
 			else if (input.front.type == colon) {
 				input.popFront();	// get rid of :
-				func_node.args_types ~= Type(input);
+				func_node.child[$-1].child[0] = Type(input);
 				// ( Expression )
 				if (input.front.type == lPar) {
 					input.popFront();	// get rid of (
-					func_node.args_conditions ~= Expression(input);
+					func_node.child[$-1].child[1] = Expression(input);
 					if (input.front.type != rPar) {
 						writeln("Enclosure of a function argument condition ) was not found.");
 					}
 				}
-				// empty
-				else func_node.args_conditions ~= null;
-			}
-			else {
-				func_node.args_types ~= null;
-				func_node.args_conditions ~= null;
 			}
 		}
 		// any
 		else if (input.front.type == any) {
-			func_node.args ~= "any";
+			func_node.child ~= new Node(input.front);
+			func_node.child[$-1].child.length = 1;
+			func_node.child ~= new Node(input.front);
 			if (input.front.type == colon) {
 				input.popFront();	// get rid of :
-				func_node.args_types ~= Type(input);
+				func_node.child[$-1].child[0] = Type(input);
 			}
-			else func_node.args_types ~= null;
-			func_node.args_conditions ~= null;
 		}
 		// Literal
-		else if (input.front.type.among!(integer, string_literal, real_number, true_, false_)) {
-			func_node.args ~= "";
-			func_node.args_types ~= null;
-			func_node.args_conditions ~= new ExprNode(input.front);
+		else if (allow_literal && input.front.type.among!(integer, string_literal, real_number, true_, false_)) {
+			func_node.child ~= expr_node(input.front);
 			input.popFront();
 		}
 		else break;
 	}
 }
 
-string stringofFunction(FunctionNode node) {
-	import std.range: iota;
-	import parser.type: stringofType;
-	import parser.expression: stringofExpression;
+string stringofFunction(Node node) {
+	import parser.defs: stringofNode;
 	
-	string result = node.func_name;
-	if (node.return_type !is null) result ~= ":" ~ stringofType(node.return_type) ~ " ";
-	else result ~= " ";
+	if (node is null) return "";
 	
-	foreach (i; 0 .. node.args.length) {
-		// literal
-		if (node.args[i] == "") {
-			result ~= stringofExpression(node.args_conditions[i]) ~ " ";
+	string result = node.token.str;
+	if (node.child[0]) result ~= ": " ~ stringofNode(node.child[0]) ~ " ";
+	foreach (node2; node.child[1 .. $-1]) {
+		result ~= node2.token.str;
+		if (node2.child[0]) result ~= ": " ~ stringofNode(node2.child[0]) ~ " ";
+		if (node2.child[1]) result ~= "(" ~ stringofNode(node2.child[1]) ~ ") ";
+	}
+	result ~= "= " ~ stringofNode(node.child[$-1]);
+	return result;
+}
+
+
+Node LetVarDeclaration(Range)(ref Range input)
+	if (isTokenRange!Range)
+{
+	import parser.type: Type, isFirstOfType;
+	import parser.expression: Expression, isFirstOfExpression;
+	Token letvar_token = input.front;
+	input.popFront();	// get rid of let/var
+	auto result = new Node(NodeType.var, letvar_token);
+
+	with(TokenType)
+	// let: int x, y, ...
+	if (input.front.type == colon) {
+		input.popFront();	// get rid of :
+
+		Node type_node;
+		// error
+		if (!input.front.type.isFirstOfType()) {
+			writeln("A type expected after '" ~ letvar_token.str ~ ":', not " ~ input.front.str);
 		}
-		else if (node.args[i] == "any") {
-			result ~= "any";
-			if (node.args_types[i] !is null) result ~= ":" ~ stringofType(node.args_types[i]) ~ " ";
-		}
-		else {
-			result ~= node.args[i];
-			if (node.args_types[i] !is null) result ~= ":" ~ stringofType(node.args_types[i]) ~ " ";
-			if (node.args_conditions[i] !is null) result ~= "(" ~ stringofExpression(node.args_conditions[i]) ~ ")";
+		else type_node = Type(input);
+
+		while (true) {
+			// error
+			if (input.front.type != identifier) {
+				writeln("An identifier expected in the let/var declaration, not" ~ input.front.str);
+				return result;
+			}
+			// id
+			auto id_node = new Node(input.front);
+			input.popFront();	// get rid of identifier
+
+			// error: tried to write like let:int x:string
+			if (input.front.type == colon) {
+				writeln("Declarations like let:T x:S is invalid. It will be regarded as x: T.");
+				input.popFront();	// get rid of :
+				if (input.front.type.isFirstOfType()) Type(input);
+			}
+
+			// id (= E)
+			Node expr_node;
+			if (input.front.type == assign) {
+				input.popFront();	// get rid of =
+				// error
+				if (!input.front.type.isFirstOfExpression()) {
+					writeln("An expression expected after '" ~ letvar_token.str ~ ":', not " ~ input.front.str);
+				}
+				else expr_node = Expression(input);
+			}
+
+			id_node.child = [type_node, expr_node];
+			result.child ~= id_node;
+
+			// id (: T) (= Expression) ,
+			if (input.front.type == comma) {
+				input.popFront();	// get rid of ,
+				continue;
+			}
+			// id (: T) (= Expression) ;
+			else if (input.front.type == semicolon) {
+				input.popFront();	// get rid of ;
+				return result;
+			}
+			// error
+			else {
+				writeln("';' or ',' expected in the let/var declaration, not " ~ input.front.str);
+				return result;
+			}
 		}
 	}
-	result ~= "=" ~ stringofExpression(node.func_body);
+	// let w, x:T, y = E, z:S = E'
+	else if (input.front.type == identifier) {
+		while (true) {
+			// error
+			if (input.front.type != identifier) {
+				writeln("An identifier expected in the let/var declaration, not" ~ input.front.str);
+				return result;
+			}
+			// id
+			auto id_node = new Node(input.front);
+			input.popFront();	// get rid of identifier
+
+			// id (: T)
+			Node type_node;
+			if (input.front.type == colon) {
+				input.popFront();	// get rid of :
+				// error
+				if (!input.front.type.isFirstOfType()) {
+					writeln("A type expected after '" ~ letvar_token.str ~ ":', not " ~ input.front.str);
+				}
+				else type_node = Type(input);
+			}
+
+			// id (: T) (= E)
+			// id = Expression
+			Node expr_node;
+			if (input.front.type == assign) {
+				input.popFront();	// get rid of =
+				// error
+				if (!input.front.type.isFirstOfExpression()) {
+					writeln("An expression expected after '" ~ letvar_token.str ~ ":', not " ~ input.front.str);
+				}
+				else expr_node = Expression(input);
+			}
+
+			id_node.child = [type_node, expr_node];
+			result.child ~= id_node;
+
+			// id (: T) (= Expression) ,
+			if (input.front.type == comma) {
+				input.popFront();	// get rid of ,
+				continue;
+			}
+			// id (: T) (= Expression) ;
+			else if (input.front.type == semicolon) {
+				input.popFront();	// get rid of ;
+				return result;
+			}
+			// error
+			else {
+				writeln("';' or ',' expected in the let/var declaration, not " ~ input.front.str);
+				return result;
+			}
+		}
+	}
+	// error
+	else {
+		writeln("An identifier or ':' followed by a type expected after '" ~ letvar_token.str ~ "', not " ~ input.front.str);
+		return null;
+	}
+}
+
+string stringofVariables(Node node) {
+	import parser.defs: stringofNode;
+
+	if (node is null) return "";
+
+	string result = node.token.str ~ " ";
+	foreach (node2; node.child) {
+		result ~= node2.token.str;
+		if (node2.child[0]) result ~= ": " ~ stringofNode(node2.child[0]) ~ " ";
+		if (node2.child[1]) result ~= " = " ~ stringofNode(node2.child[1]) ~ " ";
+		result ~= ", ";
+	}
+	result = result[0 .. $-2] ~ ";";
 	return result;
 }

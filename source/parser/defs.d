@@ -42,62 +42,45 @@ class TokenRange(R)
 
 /* for AST */
 enum NodeType {
-	dummy, expr, type, func
+	dummy, expr, type, func, var,
 }
+
 class Node {
 	NodeType type;
 	Token token;
-	this (NodeType t = NodeType.init) { type = t; }
+	Node[] child;
+	
+	this (NodeType tp = NodeType.init) { type = tp; }
 	this (TokenType t) { token.type = t; }
-	this (Token t) { token = t; }
-	this (Token tkn, NodeType tp) { token = tkn, type = tp; }
+	this (Token tkn) { token = tkn; }
+	this (NodeType tp, Token tkn) { token = tkn, type = tp; }
 }
 
-class ExprNode : Node {
-	// unary expression is expressed by unary_op
-	Node left;
-	Node right;
-	//ExprNode center;			// a when b : c is when.left = colon, when.right = b, colon.left = a, colon.right = c
-	//bool tuple_solved;		// check if the tuple is enclosed by parenthesis
-	
-	this (Token t, Node l = null, Node r = null) {
-		type = NodeType.expr, token = t, left = l, right = r; //center = c;
-		//tuple_solved = token.type != TokenType.comma;
-	}
-	this (TokenType t) { type = NodeType.expr, token.type = t; }
+Node expr_node(Token tkn, Node left = null, Node right = null, Node third = null) {
+	auto node = new Node(NodeType.expr, tkn);
+	// when has three childs
+	if (tkn.type == TokenType.when) { node.child = [left, right, third]; }
+	else { node.child = [left, right, third]; }
+	return node;
 }
 
-class TypeNode : Node {
-	Node left;
-	Node right;
-	
-	this (Token t, Node l = null, Node r = null) {
-		type = NodeType.type, token = t, left = l, right = r;
-	}
-	this (TokenType t) {
-		type = NodeType.type, token.type = t;
-	}
-}
-
-class FunctionNode : Node {
-	string func_name;
-	ExprNode func_body;
-	TypeNode func_type;
-	TypeNode return_type;
-	string[] args;
-	TypeNode[] args_types;
-	ExprNode[] args_conditions;
-	this (string fn) { type = NodeType.func, func_name = fn; }
+Node type_node(Token tkn, Node left = null, Node right = null) {
+	auto node = new Node(NodeType.type, tkn);
+	node.child = [left, right];
+	return node;
 }
 
 string stringofNode(Node node) {
 	import parser.expression: stringofExpression;
 	import parser.type: stringofType;
+	import parser.declaration: stringofFunction;
 	
 	if (node is null) return "";
 	with(NodeType) switch (node.type) {
+		case dummy:		return node.token.str;
 		case expr: 		return stringofExpression(node);
 		case type: 		return stringofType(node);
+		case func:		return stringofFunction(node);
 		default: 		return " SOMETHING ";
 	}
 }

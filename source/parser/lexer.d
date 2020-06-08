@@ -55,7 +55,7 @@ enum TokenType : uint {
 	int_, real_, string_, bool_,
 	
 	// reserved words
-	if_, else_, when, let, var, def, any, this_,
+	if_, else_, when, let, var, func, proc, any, this_,
     
 	// expression symbols
 	add, sub, mul, div, mod,    // + - * / %
@@ -68,8 +68,8 @@ enum TokenType : uint {
 	dot, dotdot,				// . ..
 	right_arrow, 				// -> (right_arrow)
 	indexing,					// !!
-	template_instance_type, 	// ?
-	template_instance_expr,		// ??
+	template_instance_expr,		// ?
+	template_instance_type,		// ::
 	dollar,						// $
 	sharp,						// #
 	pipeline,					// |>
@@ -95,17 +95,18 @@ enum TokenType : uint {
 }
 
 struct Token {
-    TokenType type;
-    string str;
-    ulong line_num;
-    ulong index_num;
+	TokenType type;
+	string str;
+	ulong line_num;
+	ulong index_num;
+	string path;
     
-    // literal value
-    long int_val;
-    double real_val;
-    alias string_val = str;
-    // will be implemented by this
-    //Variant literal;
+	// literal value
+	long int_val;
+	double real_val;
+	alias string_val = str;
+	// will be implemented by this
+	//Variant literal;
 }
 
 // These can be replaced by associative array. But currently dmd does not support compile-time associative array, we use this instead.
@@ -135,7 +136,8 @@ static const reserved_words = new TokenDict(
 	tuple("else", TokenType.else_),
 	tuple("let", TokenType.let),
 	tuple("var", TokenType.var),
-	tuple("def", TokenType.def),
+	tuple("func", TokenType.func),
+	tuple("proc", TokenType.proc),
 	tuple("when", TokenType.when),
 	tuple("any", TokenType.any),
 	tuple("this", TokenType.this_),
@@ -156,7 +158,7 @@ static const reserved_symbols = new AATree!(dchar, (a,b) => a<b, SE[])(
 	tuple(cast(dchar) '&', [SE("&&", TokenType.and)]),
 	tuple(cast(dchar) '|', [SE("||", TokenType.or), SE("|>", TokenType.pipeline)]),
 	tuple(cast(dchar) '!', [SE("!", TokenType.not), SE("!=", TokenType.neq), SE("!!", TokenType.indexing)]),
-	tuple(cast(dchar) '?', [SE("?", TokenType.template_instance_type), SE("??", TokenType.template_instance_expr)]),
+	tuple(cast(dchar) '?', [SE("?", TokenType.template_instance_expr)]),
 	tuple(cast(dchar) '$', [SE("$", TokenType.dollar)]),
 	tuple(cast(dchar) '#', [SE("#", TokenType.sharp)]),
 	tuple(cast(dchar) ',', [SE(",", TokenType.comma)]),
@@ -167,7 +169,7 @@ static const reserved_symbols = new AATree!(dchar, (a,b) => a<b, SE[])(
 	tuple(cast(dchar) '.', [SE(".", TokenType.dot), SE("..", TokenType.dotdot)]),
 	tuple(cast(dchar) '@', [SE("@", TokenType.composition)]),
 	
-	tuple(cast(dchar) ':', [SE(":", TokenType.colon)]),
+	tuple(cast(dchar) ':', [SE(":", TokenType.colon), SE("::", TokenType.template_instance_type)]),
 	tuple(cast(dchar) ';', [SE(";", TokenType.semicolon)]),
 	tuple(cast(dchar) '(', [SE("(", TokenType.lPar)]),
 	tuple(cast(dchar) ')', [SE(")", TokenType.rPar)]),
@@ -191,7 +193,7 @@ static const escape_sequences = new AATree!(dchar, (a,b) => a<b, dchar) (
 	tuple(cast(dchar) 'v', cast(dchar) '\v'),
 );
 
-Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ulong line_num, ref ulong index_num)	// when characters were looked-ahead, they will be pushed on 'lookahead'
+Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ulong line_num, ref ulong index_num, string path = "")	// when characters were looked-ahead, they will be pushed on 'lookahead'
 	if (isInputRange!Range && is(typeof(input.front) : immutable dchar))
 {
 	enum EOF = cast(dchar) -1;
@@ -297,7 +299,7 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 		else break;
 	}
 	
-	Token token;
+	Token token = { line_num:line_num, index_num:index_num, path:path };
 	
 	// identifier or reserved word
 	if (isAlpha(c) || c == '_') {

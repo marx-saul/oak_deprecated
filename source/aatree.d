@@ -4,6 +4,7 @@ import std.stdio: writeln;
 import std.typecons;
 
 unittest {
+    writeln("## aatree.d unittest1");
     //import std.stdio: writeln;
     import std.algorithm.comparison: equal;
 
@@ -27,8 +28,7 @@ unittest {
     aatree2[-1] = 0;    aatree2[1] = 0;
     aatree2[0] = 0;
     aatree2.remove(-5, 5, 9, 1, 7, -3, -8, 5, 1);
-    assert (equal(aatree2.keys, [8, 6, 4, 3, 2, 0, -1, -2, -4, -6, -7, -9])); 
-    writeln("## AATree.d unittest1");
+    assert (equal(aatree2.keys, [8, 6, 4, 3, 2, 0, -1, -2, -4, -6, -7, -9]));
     
 }
 
@@ -58,7 +58,7 @@ class AATree(K, alias less = (a,b) => a < b, V = bool)
     pure this(Tuple!(K, V)[] args...) {
         insert(args);
     }
-    
+
     // returns the keys of the elements in the ascending order
     public pure inout(K)[] keys() @property inout const {
         return array_(cast(inout(Node*)) root);
@@ -213,11 +213,13 @@ class AATree(K, alias less = (a,b) => a < b, V = bool)
                 auto R = successor(node);
                 node.right = remove(R.key, node.right);
                 node.key = R.key;
+                node.value = R.value;
             }
             else {
                 auto L = predecessor(node);
                 node.left = remove(L.key, node.left);
                 node.key = L.key;
+                node.value = L.value;
             }
         }
         // 
