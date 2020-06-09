@@ -9,7 +9,7 @@ unittest {
 	
 	//auto token_pusher = new TokenRange!string("f -> int[][string[a -> b]]");
 	//auto token_pusher = new TokenRange!string("(a -> b) -> (b -> c) -> (a -> c)");
-	auto token_pusher = new TokenRange!string("[var int:[a]]");
+	auto token_pusher = new TokenRange!string("*[var int:[a]]");
 	auto node = Type(token_pusher);
 	node.stringofType().writeln();
 }
@@ -37,9 +37,9 @@ VarType:
 	ListType
 
 ListType:
-	[ ListType : ListType ]		// [T : S] is [] --- T, S
-	[ ListType ]				// [T] is [] --- T, null
-	*ListType					// *T is * --- T
+	[ Type : Type ]		// [T : S] is [] --- T, S
+	[ Type ]				// [T] is [] --- T, null
+	*Type					// *T is * --- T
 	AtomType
 
 AtomType:
@@ -64,7 +64,7 @@ TypeList:
 //	with(TokenType) return t.among!(identifier, int_, real_, string_, bool_) != 0;
 //}
 bool isFirstOfType(TokenType t) {
-	with(TokenType) return t.among!(identifier, int_, real_, string_, bool_, lPar, lBrack, var) != 0;
+	with(TokenType) return t.among!(identifier, int_, real_, string_, bool_, lPar, lBrack, mul, var) != 0;
 }
 
 alias Type = TemplateType;
@@ -123,20 +123,21 @@ Node ListType(Range)(ref Range input)
 		input.popFront();	// get rid of [
 		// error
 		if (!input.front.type.isFirstOfType()) {
-			writeln("Type is expected after '[', not ", input.front.str);
+			writeln("A type is expected after '[', not ", input.front.str);
 			return null;
 		}
-		auto left_type = ListType(input);
+
+		auto left_type = Type(input);
 		if (input.front.type == TokenType.colon) {
 			input.popFront();	// get rid of :
 			// error
 			if (!input.front.type.isFirstOfType()) {
 				writeln("Type is expected after '[', not ", input.front.str);
 			}
-			auto right_type = ListType(input);
+			auto right_type = Type(input);
 			// error
 			if (input.front.type != TokenType.rBrack) {
-				writeln("Enclosure ']' was not found.");
+				writeln("Enclosure ']' of [T:S] was not found.");
 			}
 			return type_node(lBrack_token, left_type, right_type);
 		}
@@ -146,11 +147,11 @@ Node ListType(Range)(ref Range input)
 		}
 		// error
 		else {
-			writeln("Enclosure ']' or a colon ':' in [a] was not found.");
+			writeln("Enclosure ']' or a colon ':' in [a] are expected, not " ~ input.front.str);
 			return type_node(lBrack_token, left_type);
 		}
 	}
-	// *int
+	// *ListType
 	else if (input.front.type == TokenType.mul) {
 		auto mul_token = input.front;
 		input.popFront();	// get rid of *
@@ -159,17 +160,17 @@ Node ListType(Range)(ref Range input)
 			writeln("A type is expected after '[', not ", input.front.str);
 			return null;
 		}
-		auto left_type = ListType(input);
+		auto left_type = Type(input);
 		return type_node(mul_token, left_type);
 	}
 	// AtomType
 	else if (input.front.type.isFirstOfType()) {
 			return AtomType(input);
 	}
-    else {
-        writeln("A type is expected, not ", input.front.str);
-        return null;
-    }
+	else {
+		writeln("A type is expected, not ", input.front.str);
+		return null;
+	}
 }
 
 Node AtomType(Range)(ref Range input) 
@@ -182,7 +183,7 @@ Node AtomType(Range)(ref Range input)
 	// int, real, bool, string, ...
 	else if (isFirstOfType(input.front.type)) {
 		auto token = input.front;
-		input.popFront();
+		input.popFront();	// get rid of int/real,...
 		return type_node(token);
 	}
 	// error (somewhere not checking if it starts with FIRST(Type) when Type(Range) is called?)
@@ -241,7 +242,7 @@ string stringofType(Node node) {
 	//auto node = cast (ExprNode) n;
 	with(TokenType) switch (node.token.type) {
 	case lBrack:
-        if (node.child[1] is null) return "[" ~ stringofNode(node.child[0]) ~ "]";
+		if (node.child[1] is null) return "[" ~ stringofNode(node.child[0]) ~ "]";
 		else return "[" ~ stringofNode(node.child[0]) ~ ":" ~ stringofNode(node.child[1]) ~ "]";
 	case mul:
 		return "*" ~ stringofNode(node.child[0]);

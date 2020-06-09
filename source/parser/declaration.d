@@ -6,10 +6,8 @@ import parser.lexer, parser.defs;
 unittest {
 	writeln("\n#### parse/declration.d unittest1");
 	import parser.defs : TokenRange;
-	
-	//auto token_pusher = new TokenRange!string("def f:int 0 = 1");
-	//auto token_pusher = new TokenRange!string("def f:int n:int = n * f(n-1)");
-	auto token_pusher = new TokenRange!string("func anti_compose:a->c f:a->b g:b->c = g.f");
+
+	auto token_pusher = new TokenRange!string("func:a->c anti_compose f:a->b g:b->c = g.f");
 	auto node = FunctionProcedureDeclaration(token_pusher);
 	node.stringofFunction().writeln();
 
@@ -30,6 +28,8 @@ IdentifierWithTypeDeclarations:
 	IdentifierWithTypeDeclaration
 
 IdentifierWithTypeDeclaration:
+	identifier
+	identifier = Expression
 	identifier : Type
 	identifier : Type = Expression
 
@@ -40,13 +40,15 @@ IdentifierDeclarations:
 IdentifierDeclaration:
 	identifier
 	identifier = Expression
+	identifier : Type
+	identifier : Type = Expression
 
 
 FunctionProcedureDeclaration:
-	func identifier : Type FunctionArgumentsDeclarations = Expression ;
-	func identifier        FunctionArgumentsDeclarations = Expression ;
-	proc identifier : Type FunctionArgumentsDeclarations = Expression ;
-	proc identifier        FunctionArgumentsDeclarations = Expression ;
+	func : Type identifier FunctionArgumentsDeclarations = Expression ;
+	func        identifier FunctionArgumentsDeclarations = Expression ;
+	proc : Type identifier FunctionArgumentsDeclarations = Expression ;
+	proc        identifier FunctionArgumentsDeclarations = Expression ;
 
 
 FunctionArgumentsDeclarations:
@@ -98,7 +100,7 @@ let
 */
 
 /*
-f:T w x:S y(E') z:R(E'') = E
+func:T f w x:S y(E') z:R(E'') = E
 has AST:
 f
 |- T
@@ -123,7 +125,7 @@ f
 
 *********************
 
-g any 3 any:T = F
+func g any 3 any:T = F
 has AST :
 g
 |- null
@@ -146,29 +148,31 @@ Node FunctionProcedureDeclaration(Range)(ref Range input)
 	if (isTokenRange!Range)
 {
 	input.popFront();	// get rid of func/proc
-	
-	// error
-	if (input.front.type != TokenType.identifier) {
-		writeln("An identifier is expected after 'func', not " ~ input.front.str);
-		return null;
-	}
-	auto func_node = new Node(input.front);
-	input.popFront();	// get rid of id
-	// : Type
+
+	Node type_node;
+	// func : Type
 	if (input.front.type == TokenType.colon) {
-		input.popFront();	// get rid of :
-		
+		input.popFront();
 		import parser.type: isFirstOfType, Type;
 		if (!input.front.type.isFirstOfType()) {
 			// error
 			writeln("A type is expected after :, not " ~ input.front.str);
-			return null;
 		}
-		auto type = Type(input);
-		func_node.child ~= type;
+		else {
+			type_node = Type(input);
+		}
 	}
-	else func_node.child ~= null;
-	
+
+	// func (: Type) id
+	// error
+	if (input.front.type != TokenType.identifier) {
+		writeln("An identifier is expected after 'func (: T)', not " ~ input.front.str);
+		return null;
+	}
+	auto func_node = new Node(input.front);
+	func_node.child = [type_node];
+	input.popFront();	// get rid of id
+
 	FunctionArgumentsDeclarations(input, func_node);
 	
 	// = 
@@ -181,7 +185,7 @@ Node FunctionProcedureDeclaration(Range)(ref Range input)
 	// else if (input.front.type == TokenType.assign) {}
 	// error
 	else {
-		writeln("= is expected after 'func' declaration, not " ~ input.front.str);
+		writeln("= is expected after func/proc declaration, not " ~ input.front.str);
 	}
 	
 	return func_node;
