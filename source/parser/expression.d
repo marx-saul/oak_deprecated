@@ -19,14 +19,18 @@ unittest {
 	token_pusher = new TokenRange!string("a <= b > c");
 	node = Expression(token_pusher);
 
-	token_pusher = new TokenRange!string("reverse static_list::int?3 .stringof");
+	token_pusher = new TokenRange!string("reverse static_list::int?struct(S){a:3, b:4.4} .stringof");
 	node = Expression(token_pusher);
 	node.stringofExpression().writeln();
 }
 
 bool isFirstOfExpression(TokenType a) {
 	with(TokenType)
-		return a.among!(add, sub, not, lPar, lambda, dollar, identifier, integer, real_number, /*character,*/ string_literal, true_, false_, this_) != 0;
+		return a.among!(
+			add, sub, not, lPar, lambda, dollar, identifier,
+			integer, real_number, /*character,*/ string_literal,
+			true_, false_, this_, struct_
+		) != 0;
 }
 
 Node Expression(Range)(ref Range input)
@@ -109,6 +113,7 @@ private static const op_ranks = new AATree!(TokenType, (a,b)=>a<b, int)(
 	tuple(TokenType.pipeline, 500),
 	tuple(TokenType.or,  600),
 	tuple(TokenType.and, 700),
+	tuple(TokenType.indexing, 800),
 	tuple(TokenType.ls,  1102), tuple(TokenType.leq, 1102), tuple(TokenType.gt,  1102),
 	tuple(TokenType.geq, 1102), tuple(TokenType.eq,  1102), tuple(TokenType.neq, 1102),
 	tuple(TokenType.add, 1200), tuple(TokenType.sub, 1200), tuple(TokenType.cat, 1200),
@@ -241,13 +246,29 @@ private Node UnaryExpression(Range)(ref Range input, ref uint parenthesis_depth)
 		return node;
 	}
 	else if (input.front.type.isFirstOfExpression()) {
-		return ApplyExpression(input, parenthesis_depth);
+		return PowerExpression(input, parenthesis_depth);
 	}
 	// error
 	else {
 		writeln("An expression is expected, not " ~ input.front.str);
 		return null;
 	}
+}
+
+private Node PowerExpression(Range)(ref Range input, ref uint parenthesis_depth)
+	if (isTokenRange!Range)
+{
+	debug(parser) { writeln("composition_expression"); scope(exit) writeln("end composition_expression"); }
+	auto dot_expr = ApplyExpression(input, parenthesis_depth);
+	if (input.front.type == TokenType.pow) {
+		auto composite_token = input.front;
+		input.popFront();	// get rid of @
+		// check if the following is the start of expression
+		if (!input.front.type.isFirstOfExpression()) { writeln("An expression is expected after '^^' "); return null; }	// error
+		auto composition_expr = PowerExpression(input, parenthesis_depth);
+		return expr_node(composite_token, dot_expr, composition_expr);
+	}
+	else return dot_expr;
 }
 
 private Node ApplyExpression(Range)(ref Range input, ref uint parenthesis_depth)
@@ -336,6 +357,20 @@ private Node TemplateInstanceExpression(Range)(ref Range input, ref uint parenth
 	}
 	return result;
 }
+/*
+Lambda:
+	\ : Type identifier FunctionArgumentsDeclarations = Expression ;
+	\        identifier FunctionArgumentsDeclarations = Expression ;
+	//\ : Type identifier FunctionArgumentsDeclarations BlockStatement ;
+	//\        identifier FunctionArgumentsDeclarations BlockStatement ;
+
+StructLiteral:
+	struct ( Type ) { StructLiteralBodies }
+StructLiteralBodies:
+	empty
+	identifier : Expression
+	identifier : Expression , StructLiteralBodies
+*/
 
 private Node AtomExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	if (isTokenRange!Range)
@@ -392,6 +427,59 @@ private Node AtomExpression(Range)(ref Range input, ref uint parenthesis_depth)
 		func_node.child ~= Expression(input);
 		return func_node;
 	}
+	// struct literal
+	else if (input.front.type == struct_) {
+		import parser.type;
+		auto struct_token = input.front;
+		input.popFront();	// get rid of struct
+		// error
+		if (input.front.type != lPar) {
+			writeln("'(' was expected for struct literals, not " ~ input.front.str);
+			return null;
+		}
+		input.popFront();	// get rid of (
+		auto type_node = Type(input);
+		// error
+		if (input.front.type != rPar) {
+			writeln("Enclosure ')' was expected for struct literals, not " ~ input.front.str);
+			return null;
+		}
+		input.popFront();	// get rid of )
+		auto result = expr_node(struct_token, type_node);
+		// error
+		if (input.front.type != lBrace) {
+			writeln("'{' was expected for struct literals, not" ~ input.front.str);
+			return null;
+		}
+		input.popFront();	// get rid of {
+		// StructLiteralBodies
+		while (true) {
+			if (input.front.type != identifier) break;
+			auto id_node = new Node(input.front);
+			input.popFront();	// get rid of identifier
+			// error
+			if (input.front.type != colon) {
+				writeln("':' was expected for the struct literals, not " ~ input.front.str);
+				input.popFront();
+				continue;
+			}
+			input.popFront();	// get rid of colon
+			if (!input.front.type.isFirstOfExpression()) {
+				writeln("An expression was expected after ':', not " ~ input.front.str);
+				input.popFront();
+				continue;
+			}
+			id_node.child = [Expression(input)];
+			result.child ~= id_node;
+			if (input.front.type == comma) input.popFront();
+		}
+		// error
+		if (input.front.type != rBrace) {
+			writeln("Enclosure '}' was expected for struct literals, not " ~ input.front.str);
+			return null;
+		}
+		return result;
+	}
 	// else if (input.front.type == struct)
 	else {
 		writeln("An atom expression is expected, not " ~ input.front.str);
@@ -401,19 +489,25 @@ private Node AtomExpression(Range)(ref Range input, ref uint parenthesis_depth)
 
 string stringofExpression(Node node) {
 	import parser.defs: stringofNode;
-	if (node is null) return "";
-	
+
 	//auto node = cast (ExprNode) n;
 	with(TokenType) switch (node.token.type) {
 	case when:
 		auto a = node.child[0], b = node.child[1], c = node.child[2];
-		return " ((" ~ stringofNode(a) ~ " ) when (" ~ stringofNode(b) ~ " ) else (" ~ stringofNode(c) ~ " ))" ;
-	
+		return "((" ~ stringofNode(a) ~ ") when (" ~ stringofNode(b) ~ ") else (" ~ stringofNode(c) ~ "))" ;
+	case struct_:
+		//return "struct () {}, " ~ node.child.length.to!string;
+		string result = "struct(" ~ stringofNode(node.child[0]) ~ ") {";
+		foreach (id_node; node.child[1 .. $]) {
+			if (id_node is null) result ~= " /+ERROR+/, ";
+			else result ~= id_node.token.str ~ ":" ~ stringofNode(id_node.child[0]) ~ ", ";
+		}
+		return result[0 .. $-2] ~ "}";
 	default:
-		if (node.child[0] is null && node.child[1] is null ) return " " ~ node.token.str;
-		else return " (" ~ stringofNode(node.child[0]) ~ " " ~ node.token.str ~ stringofNode(node.child[1]) ~ " )";
-	
+		if (node.child[0] is null && node.child[1] is null )
+			if (node.token.type == TokenType.string_literal) return `"` ~ node.token.str ~ `"`;
+			else return node.token.str;
+		else return "(" ~ stringofNode(node.child[0]) ~ " " ~ node.token.str ~ " " ~ stringofNode(node.child[1]) ~ ")";
 	}
 }
-
 

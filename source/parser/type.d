@@ -237,7 +237,6 @@ Node TupleType(Range)(ref Range input)
 
 string stringofType(Node node) {
 	import parser.defs: stringofNode;
-	if (node is null) return "";
 	
 	//auto node = cast (ExprNode) n;
 	with(TokenType) switch (node.token.type) {

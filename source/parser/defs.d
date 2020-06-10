@@ -42,7 +42,7 @@ class TokenRange(R)
 
 /* for AST */
 enum NodeType {
-	dummy, expr, type, func, var,
+	dummy, expr, type, func, proc, let, if_, while_, struct_, block,
 }
 
 class Node {
@@ -59,8 +59,10 @@ class Node {
 Node expr_node(Token tkn, Node left = null, Node right = null, Node third = null) {
 	auto node = new Node(NodeType.expr, tkn);
 	// when has three childs
-	if (tkn.type == TokenType.when) { node.child = [left, right, third]; }
-	else { node.child = [left, right, third]; }
+	with (TokenType)
+	if      (tkn.type == when)    { node.child = [left, right, third]; }
+	else if (tkn.type == struct_) { node.child = [left]; }
+	else                          { node.child = [left, right]; }
 	return node;
 }
 
@@ -73,14 +75,22 @@ Node type_node(Token tkn, Node left = null, Node right = null) {
 string stringofNode(Node node) {
 	import parser.expression: stringofExpression;
 	import parser.type: stringofType;
-	import parser.declaration: stringofFunction;
-	
+	import parser.declaration: stringofFunction, stringofVariables, stringofStruct;
+	import parser.statement: stringofIfElseStatement, stringofWhileStatement, stringofBlockStatement;
+
 	if (node is null) return "";
 	with(NodeType) switch (node.type) {
-		case dummy:		return node.token.str;
-		case expr: 		return stringofExpression(node);
-		case type: 		return stringofType(node);
-		case func:		return stringofFunction(node);
-		default: 		return " SOMETHING ";
+		case dummy:
+			if (node.token.type == TokenType.string_literal) return "\"" ~ node.token.str ~ "\"";
+			else return node.token.str;
+		case expr:            return stringofExpression(node);
+		case type: 		      return stringofType(node);
+		case func:            return stringofFunction(node);
+		case let:             return stringofVariables(node);
+		case if_:             return stringofIfElseStatement(node);
+		case while_:          return stringofWhileStatement(node);
+		case block:           return stringofBlockStatement(node);
+		case struct_:         return stringofStruct(node);
+		default: 		      return " SOMETHING ";
 	}
 }

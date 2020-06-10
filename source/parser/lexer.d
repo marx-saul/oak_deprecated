@@ -56,6 +56,8 @@ enum TokenType : uint {
 	
 	// reserved words
 	if_, else_, when, let, var, func, proc, any, this_,
+	while_, foreach_, foreach_reverse_,
+	struct_, class_, interface_,
     
 	// expression symbols
 	add, sub, mul, div, mod,    // + - * / %
@@ -116,7 +118,6 @@ pure @nogc @safe bool string_dictionary_order(string a, string b) {
 		if (a[i] > b[i]) return false;
 		if (a[i] < b[i]) return true;
 	}
-	
 	return m < n;
 }
 
@@ -126,21 +127,27 @@ template StringDict(T) {
 alias TokenDict = StringDict!(TokenType);
 
 static const reserved_words = new TokenDict(
-	tuple("true", TokenType.true_),
-	tuple("false", TokenType.false_),
-	tuple("int", TokenType.int_),
-	tuple("real", TokenType.real_),
-	tuple("string", TokenType.string_),
-	tuple("bool", TokenType.bool_),
-	tuple("if", TokenType.if_),
-	tuple("else", TokenType.else_),
-	tuple("let", TokenType.let),
-	tuple("var", TokenType.var),
-	tuple("func", TokenType.func),
-	tuple("proc", TokenType.proc),
-	tuple("when", TokenType.when),
-	tuple("any", TokenType.any),
-	tuple("this", TokenType.this_),
+	tuple("true",            TokenType.true_),
+	tuple("false",           TokenType.false_),
+	tuple("int",             TokenType.int_),
+	tuple("real",            TokenType.real_),
+	tuple("string",          TokenType.string_),
+	tuple("bool",            TokenType.bool_),
+	tuple("if",              TokenType.if_),
+	tuple("else",            TokenType.else_),
+	tuple("let",             TokenType.let),
+	tuple("var",             TokenType.var),
+	tuple("func",            TokenType.func),
+	tuple("proc",            TokenType.proc),
+	tuple("when",            TokenType.when),
+	tuple("any",             TokenType.any),
+	tuple("this",            TokenType.this_),
+	tuple("while",           TokenType.while_),
+	tuple("foreach",         TokenType.foreach_),
+	tuple("foreach_reverse", TokenType.foreach_reverse_),
+	tuple("struct",          TokenType.struct_),
+	tuple("class",           TokenType.class_),
+	tuple("interface",       TokenType.interface_),
 );
 
 //Tuple!( dchar, immutable(Tuple!(string, "str", TokenType, "type"))[] )
@@ -441,7 +448,7 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 					c = nextChar();
 					while (true) {
 						exponent /= 10;
-						if (c.among!('0', '1')) {
+						if (c.among!(aliasSeqOf!"0123456789")) {
 							token.real_val += exponent * (c - '0');
 							token.str ~= c;
 						}
