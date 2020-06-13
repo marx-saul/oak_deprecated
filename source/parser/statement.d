@@ -7,7 +7,7 @@ import parser.lexer, parser.defs, parser.expression, parser.declaration;
 Statement:
     LetVarDeclaration               // declaration
     FunctionProcedureDeclaration    // declaration
-    StructDeclaration             // declaration
+    StructDeclaration               // declaration
     Expression ;                    // expression
     // Note: StructDeclaration and Expression both start with the token struct, but a struct literal
     // is of the form struct(S) {a:b, ...}, we can decide these by look-ahead.
@@ -53,18 +53,18 @@ unittest {
     import parser.defs : TokenRange;
 
     auto token_pusher = new TokenRange!string(`{
-        func:int f n:int(n>0) = n * f(n-1);
+        func:int f n:int(n>0) = -n * f(n-1);
         func f 0 = 1;
         if n > 0 { writeln "positive"; } else if n < 0 { writeln "negative"; } else { writeln "0"; }
         var counter = 0;
         while counter < 10 { writeln counter "-th visit"; counter.inc; }
-        struct S {
+        /+struct S {
             let a: var int, b: [var int];
             func: var int f = b !! a^^2;
-        }
+        }+/
     }`);
-    auto node = Statement(token_pusher);
-    node.stringofNode().writeln();
+    auto node = statement(token_pusher);
+    node.stringof.writeln();
 }
 
 bool isFirstOfStatement(TokenType t) {
@@ -72,32 +72,32 @@ bool isFirstOfStatement(TokenType t) {
         t.among!(let, var, func, proc, if_, while_, lBrace) || t.isFirstOfExpression();
 }
 
-Node Statement(Range)(ref Range input)
+AST statement(Range)(ref Range input)
     if (isTokenRange!Range)
 {
     with (TokenType)
     switch (input.front.type) {
-        case let:   case var:  return LetVarDeclaration(input);
-        case func:  case proc: return FunctionProcedureDeclaration(input);
+        case let:   case var:  return letVarDeclaration(input);
+        case func:  case proc: return functionProcedureDeclaration(input);
         //case struct_:
         //case class_:
         //case interface_:
         // case Expression
-        case if_:              return IfElseStatement(input);
-        case while_:           return WhileStatement(input);
+        case if_:              return ifElseStatement(input);
+        case while_:           return whileStatement(input);
         //case foreach_: case foreach_reverse_:
-        case lBrace:           return BlockStatement(input);
+        case lBrace:           return blockStatement(input);
 
         default: break;
     }
     with (TokenType)
     // StructDeclaration
     if      (input.front.type == TokenType.struct_ && input.lookahead.type != lPar) {
-        return StructDeclaration(input);
+        return null;
     }
     // Expression
     else if (input.front.type.isFirstOfExpression()) {
-        auto expr_node = Expression(input);
+        auto expr_node = expression(input);
         if (input.front.type != semicolon) {
             writeln("';' was expected after an expression, not " ~ input.front.str);
         }
@@ -110,23 +110,23 @@ Node Statement(Range)(ref Range input)
         return null;
     }
 }
-Node[] Statements(Range)(ref Range input)
+AST[] statements(Range)(ref Range input)
     if (isTokenRange!Range)
 {
-    Node[] result;
+    AST[] result;
     while (isFirstOfStatement(input.front.type)) {
-        result ~= Statement(input);
+        result ~= statement(input);
     }
     //writeln("statements end with " ~ input.front.str);
     return result;
 }
-Node BlockStatement(Range)(ref Range input)
+Block blockStatement(Range)(ref Range input)
     if (isTokenRange!Range)
 {
     auto lBrace_token = input.front;
     input.popFront();   // get rid of {
-    auto result = new Node(NodeType.block, lBrace_token);
-    result.child = Statements(input);
+    auto result = new Block(lBrace_token);
+    result.statements = statements(input);
     // error
     if (input.front.type != TokenType.rBrace) {
         writeln("Enclosure '}' of the block was expected, not " ~ input.front.str);
@@ -134,32 +134,36 @@ Node BlockStatement(Range)(ref Range input)
     input.popFront();   // get rid of }
     return result;
 }
-
-string stringofBlockStatement(Node node) {
+/+
+string stringofBlockStatement(AST node) {
     import parser.defs: stringofNode;
     import std.conv:to;
     string result = /*node.child.length.to!string ~ */"{\n";
     foreach (stmt; node.child) {
         result ~= stringofNode(stmt);
         if (stmt is null) { result ~= " NULL\n"; break; }
-        if (stmt.type == NodeType.expr) result ~= ";";
+        if (stmt.node_type == ASTType.expr) result ~= ";";
         result ~= "\n";
     }
     return result ~= "}";
 }
-
-Node IfElseStatement(Range)(ref Range input)
++/
+IfElse ifElseStatement(Range)(ref Range input)
     if (isTokenRange!Range)
 {
     auto if_token = input.front;
     input.popFront();   // get rid of 'if'
-    auto expr_node = Expression(input);
+    AST expr_node;
+    if (!input.front.type.isFirstOfExpression()) {
+        writeln("An expression expected after 'if', not " ~ input.front.str);
+    }
+    else expr_node = expression(input);
 
-    Node statement1, statement2;
+    AST statement1, statement2;
     with (TokenType)
     // if Expression BlockStatement
     if      (input.front.type == lBrace) {
-        statement1 = BlockStatement(input);
+        statement1 = blockStatement(input);
     }
     // error
     else {
@@ -171,11 +175,11 @@ Node IfElseStatement(Range)(ref Range input)
         input.popFront();   // get rid of else
         // if Expression else BlockStatement
         if      (input.front.type == lBrace) {
-            statement2 = BlockStatement(input);
+            statement2 = blockStatement(input);
         }
         // if Expression else IfElseStatement
         else if (input.front.type == if_) {
-            statement2 = IfElseStatement(input);
+            statement2 = ifElseStatement(input);
         }
         // error
         else {
@@ -183,43 +187,51 @@ Node IfElseStatement(Range)(ref Range input)
         }
     }
 
-    auto if_else_node = new Node(NodeType.if_, if_token);
-    if_else_node.child = [expr_node, statement1, statement2];
+    auto if_else_node = new IfElse(if_token);
+    if_else_node.condition = expr_node,
+    if_else_node.if_block = statement1,
+    if_else_node.else_block = statement2;
     return if_else_node;
 }
-
-string stringofIfElseStatement(Node node) {
+/+
+string stringofIfElseStatement(AST node) {
     import parser.defs: stringofNode;
     string result = "if" ~ stringofNode(node.child[0]) ~ stringofNode(node.child[1]);
     if (node.child[2] !is null) result ~= " else " ~ stringofNode(node.child[2]);
     return result;
 }
-
-Node WhileStatement(Range)(ref Range input)
++/
+While whileStatement(Range)(ref Range input)
     if (isTokenRange!Range)
 {
     auto while_token = input.front;
     input.popFront();   // get rid of 'while'
-    auto expr_node = Expression(input);
+    AST expr_node;
+    if (!input.front.type.isFirstOfExpression()) {
+        writeln("An expression expected after 'while', not " ~ input.front.str);
+    }
+    else expr_node = expression(input);
 
-    Node block_statement;
+    Block block_statement;
     with (TokenType)
     // while Expression BlockStatement
     if (input.front.type == lBrace) {
-        block_statement = BlockStatement(input);
+        block_statement = blockStatement(input);
     }
     // error
     else {
         writeln("A block { ... } was expected as the body of 'while', not " ~ input.front.str);
     }
 
-    auto while_node = new Node(NodeType.while_, while_token);
-    while_node.child = [expr_node, block_statement];
+    auto while_node = new While(while_token);
+    while_node.condition = expr_node,
+    while_node.block = block_statement;
     return while_node;
 }
-
-string stringofWhileStatement(Node node) {
+/+
+string stringofWhileStatement(AST node) {
     import parser.defs: stringofNode;
     string result = "while" ~ stringofNode(node.child[0]) ~ stringofNode(node.child[1]);
     return result;
 }
++/

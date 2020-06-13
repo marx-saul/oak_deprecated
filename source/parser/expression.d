@@ -13,15 +13,15 @@ unittest {
 	//auto token_pusher = new TokenRange!string("f # a when b else f - g.h k * i, j ");
 	//auto token_pusher = new TokenRange!string("f # a when b else f - g.h k * (i?3::int, j) ");
 	auto token_pusher = new TokenRange!string("fix (\\:int f:int->int n:int = 1 when n == 0 else n * f (n-1))");
-	auto node = Expression(token_pusher);
-	node.stringofExpression().writeln();
+	auto node = expression(token_pusher);
+	node.stringof.writeln();
 	
 	token_pusher = new TokenRange!string("a <= b > c");
-	node = Expression(token_pusher);
+	node = expression(token_pusher);
 
-	token_pusher = new TokenRange!string("reverse static_list::int?struct(S){a:3, b:4.4} .stringof");
-	node = Expression(token_pusher);
-	node.stringofExpression().writeln();
+	//token_pusher = new TokenRange!string("reverse static_list::int?struct(S){a:3, b:4.4} .stringof");
+	//node = expression(token_pusher);
+	//node.stringof.writeln();
 }
 
 bool isFirstOfExpression(TokenType a) {
@@ -33,42 +33,42 @@ bool isFirstOfExpression(TokenType a) {
 		) != 0;
 }
 
-Node Expression(Range)(ref Range input)
+AST expression(Range)(ref Range input)
 	if (isTokenRange!Range)
 {
 	uint parenthesis_depth;
-	return AssignExpression(input, parenthesis_depth);
+	return assignExpression(input, parenthesis_depth);
 }
 //alias NonAssignExpression = SharpExpression;
 
-Node AssignExpression(Range)(ref Range input, ref uint parenthesis_depth)
+AST assignExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	if (isTokenRange!Range)
 {
 	debug(parser) { writeln("assign_expression"); scope(exit) writeln("end assign_expression"); }
-	auto sharp_expr = SharpExpression(input, parenthesis_depth);
+	auto sharp_expr = sharpExpression(input, parenthesis_depth);
 	with(TokenType) if (input.front.type.among!(assign, add_assign, sub_assign, mul_assign, div_assign, mod_assign)) {
 		auto assign_token = input.front;
 		input.popFront();	// get rid of =
 		// check if the following is the start of expression
 		if (!input.front.type.isFirstOfExpression()) { writeln("An expression is expected after '=', not " ~ input.front.str); return null; }	// error
-		auto assign_expr = AssignExpression(input, parenthesis_depth);
-		return expr_node(assign_token, sharp_expr, assign_expr);
+		auto assign_expr = assignExpression(input, parenthesis_depth);
+		return new BinaryExpression(assign_token, sharp_expr, assign_expr);
 	}
 	else return sharp_expr;
 }
 
-private Node SharpExpression(Range)(ref Range input, ref uint parenthesis_depth)
+private AST sharpExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	if (isTokenRange!Range)
 {
 	debug(parser) { writeln("sharp_expression"); scope(exit) writeln("end sharp_expression"); }
-	auto when_expr = WhenExpression(input, parenthesis_depth);
+	auto when_expr = whenExpression(input, parenthesis_depth);
 	if (input.front.type == TokenType.sharp) {
 		auto sharp_token = input.front;
 		input.popFront();	// get rid of #
 		// check if the following is the start of expression
 		if (!input.front.type.isFirstOfExpression()) { writeln("An expression is expected after '#', not " ~ input.front.str); return null; }	// error
-		auto sharp_expr = SharpExpression(input, parenthesis_depth);
-		return expr_node(sharp_token, when_expr, sharp_expr);
+		auto sharp_expr = sharpExpression(input, parenthesis_depth);
+		return new BinaryExpression(sharp_token, when_expr, sharp_expr);
 	}
 	else return when_expr;
 }
@@ -76,17 +76,17 @@ private Node SharpExpression(Range)(ref Range input, ref uint parenthesis_depth)
 // WhenExpression:
 //     CommaExpression when CommaExpression : WhenExpression
 //     CommaExpression
-private Node WhenExpression(Range)(ref Range input, ref uint parenthesis_depth)
+private AST whenExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	if (isTokenRange!Range)
 {
 	debug(parser) { writeln("when_expression"); scope(exit) writeln("end when_expression"); }
-	auto comma_expr1 = CommaExpression(input, parenthesis_depth);
+	auto comma_expr1 = commaExpression(input, parenthesis_depth);
 	if (input.front.type == TokenType.when) {
 		auto when_token = input.front;
 		input.popFront();	// get rid of 'when'
 		// check if the following is the start of expression
 		if (!input.front.type.isFirstOfExpression()) { writeln("An expression is expected after 'when', not " ~ input.front.str); return null; }	// error
-		auto comma_expr2 = CommaExpression(input, parenthesis_depth);
+		auto comma_expr2 = commaExpression(input, parenthesis_depth);
 		// else not found error
 		if (input.front.type != TokenType.else_) {
 			writeln("'else' not found");
@@ -96,10 +96,23 @@ private Node WhenExpression(Range)(ref Range input, ref uint parenthesis_depth)
 		input.popFront();	// get rid of else
 		// check if the following is the start of expression
 		if (!input.front.type.isFirstOfExpression()) { writeln("An expression is expected after ':', not " ~ input.front.str); return null; }	// error
-		auto when_expr = WhenExpression(input, parenthesis_depth);
-		return expr_node(when_token, comma_expr1, comma_expr2, when_expr);
+		auto when_expr = whenExpression(input, parenthesis_depth);
+		return new WhenExpression(when_token, comma_expr1, comma_expr2, when_expr);
 	}
 	else return comma_expr1;
+}
+
+private AST commaExpression(Range)(ref Range input, ref uint parenthesis_depth)
+	if (isTokenRange!Range)
+{
+	debug(parser) { writeln("comma_expression"); scope(exit) writeln("end comma_expression"); }
+	return pipelineExpression(input, parenthesis_depth);
+	/+if (parenthesis_depth == 0) {
+		// error
+		if (!input.front.type.isFirstOfExpression()) { writeln("An expression is expected, not " ~ input.front.str); return null; }
+		return PipelineExpression(input, parenthesis_depth);
+	}
+	else assert(0, "Tuple has not implemented yet");+/
 }
 
 /*************************************/
@@ -109,7 +122,6 @@ private Node WhenExpression(Range)(ref Range input, ref uint parenthesis_depth)
 private static const op_ranks = new AATree!(TokenType, (a,b)=>a<b, int)(
 	tuple(TokenType.dummy, 0),
 	tuple(TokenType.end_of_file, 0),
-	tuple(TokenType.comma, 401),
 	tuple(TokenType.pipeline, 500),
 	tuple(TokenType.or,  600),
 	tuple(TokenType.and, 700),
@@ -142,13 +154,13 @@ private Action precedence(TokenType a, TokenType b) {
 	}
 }
 
-private Node CommaExpression(Range)(ref Range input, ref uint parenthesis_depth)
+private AST pipelineExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	if (isTokenRange!Range)
 {
 	enum Token dummy_token = {type: TokenType.dummy};
 	debug(parser) { writeln("comma_expression"); scope(exit) writeln("end comma_expression"); }
-	Node[] nodes;
-	Node[] operators = [expr_node(dummy_token)];
+	AST[] nodes;
+	AST[] operators = [new BinaryExpression(dummy_token)];
 	
 	bool operator_expected = false;
 	bool end_parsing = false;
@@ -169,7 +181,7 @@ private Node CommaExpression(Range)(ref Range input, ref uint parenthesis_depth)
 		if (!operator_expected) {
 			// call UnaryExpression
 			if (isFirstOfExpression(token.type)) {
-				nodes ~= UnaryExpression(input, parenthesis_depth);
+				nodes ~= unaryExpression(input, parenthesis_depth);
 				operator_expected = true;
 			}
 			// error
@@ -180,26 +192,26 @@ private Node CommaExpression(Range)(ref Range input, ref uint parenthesis_depth)
 		}
 		// binary operator expected
 		else {
+
 			//writeln("binary operator expected");
 			// comma ',' must be enclosured by ( .... )
-			if (
-				!end_parsing &&
-				((token.type == TokenType.comma && parenthesis_depth == 0) || !op_ranks.hasKey(token.type))
-			) {
+			if ( !end_parsing && !op_ranks.hasKey(token.type) ) {
 				end_parsing = true;
 				continue;
 			}
+
 			//writeln(operators[$-1].token.type, " ", token.type);
 			// binary operator
 			with(Action) switch (precedence(operators[$-1].token.type, token.type)) {
 			case shift:
-				operators ~= expr_node(token);
+				operators ~= new BinaryExpression(token);
 				input.popFront();	// get rid of the operator.
 				operator_expected = false;
 			break;
 			
 			case reduce:
-				operators[$-1].child = [nodes[$-2], nodes[$-1]];
+				auto top = cast(BinaryExpression) operators[$-1];
+				top.left = nodes[$-2], top.right = nodes[$-1];
 				nodes[$-2] = operators[$-1];
 				operators.length -= 1, nodes.length -= 1;
 			break;
@@ -227,7 +239,7 @@ private Node CommaExpression(Range)(ref Range input, ref uint parenthesis_depth)
 }
 /******************************************/
 
-private Node UnaryExpression(Range)(ref Range input, ref uint parenthesis_depth)
+private AST unaryExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	if (isTokenRange!Range)
 {
 	debug(parser) { writeln("unary_expression"); scope(exit) writeln("end unary_expression"); }
@@ -241,12 +253,12 @@ private Node UnaryExpression(Range)(ref Range input, ref uint parenthesis_depth)
 			writeln("An expression is expected after '" ~ token_op.str ~ "', not '" ~ input.front.str ~ "'");
 			return null;
 		}
-		auto unary_expr = UnaryExpression(input, parenthesis_depth);
-		auto node = expr_node(token_unary_op, new Node(token_op), unary_expr);
+		auto unary_expr = unaryExpression(input, parenthesis_depth);
+		auto node = new BinaryExpression(token_unary_op, new AST(token_op), unary_expr);
 		return node;
 	}
 	else if (input.front.type.isFirstOfExpression()) {
-		return PowerExpression(input, parenthesis_depth);
+		return powerExpression(input, parenthesis_depth);
 	}
 	// error
 	else {
@@ -255,58 +267,58 @@ private Node UnaryExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	}
 }
 
-private Node PowerExpression(Range)(ref Range input, ref uint parenthesis_depth)
+private AST powerExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	if (isTokenRange!Range)
 {
 	debug(parser) { writeln("composition_expression"); scope(exit) writeln("end composition_expression"); }
-	auto dot_expr = ApplyExpression(input, parenthesis_depth);
+	auto dot_expr = applyExpression(input, parenthesis_depth);
 	if (input.front.type == TokenType.pow) {
 		auto composite_token = input.front;
 		input.popFront();	// get rid of @
 		// check if the following is the start of expression
 		if (!input.front.type.isFirstOfExpression()) { writeln("An expression is expected after '^^' "); return null; }	// error
-		auto composition_expr = PowerExpression(input, parenthesis_depth);
-		return expr_node(composite_token, dot_expr, composition_expr);
+		auto composition_expr = powerExpression(input, parenthesis_depth);
+		return new BinaryExpression(composite_token, dot_expr, composition_expr);
 	}
 	else return dot_expr;
 }
 
-private Node ApplyExpression(Range)(ref Range input, ref uint parenthesis_depth)
+private AST applyExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	if (isTokenRange!Range)
 {
 	debug(parser) { writeln("apply_expression"); scope(exit) writeln("end apply_expression"); }
-	auto result = CompositionExpression(input, parenthesis_depth);
+	auto result = compositionExpression(input, parenthesis_depth);
 	Token token_app = { type:TokenType.app, str:"app" };
 	// f - g is not parsed as f (-g)
 	with (TokenType)
 	while (!input.front.type.among!(add, sub) && input.front.type.isFirstOfExpression()) {
-		auto comp_expr = CompositionExpression(input, parenthesis_depth);
-		result = expr_node(token_app, result, comp_expr);
+		auto comp_expr = compositionExpression(input, parenthesis_depth);
+		result = new BinaryExpression(token_app, result, comp_expr);
 	}
 	return result;
 }
 
-private Node CompositionExpression(Range)(ref Range input, ref uint parenthesis_depth)
+private AST compositionExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	if (isTokenRange!Range)
 {
 	debug(parser) { writeln("composition_expression"); scope(exit) writeln("end composition_expression"); }
-	auto dot_expr = DotExpression(input, parenthesis_depth);
+	auto dot_expr = dotExpression(input, parenthesis_depth);
 	if (input.front.type == TokenType.composition) {
 		auto composite_token = input.front;
 		input.popFront();	// get rid of @
 		// check if the following is the start of expression
 		if (!input.front.type.isFirstOfExpression()) { writeln("An expression is expected after '@' "); return null; }	// error
-		auto composition_expr = CompositionExpression(input, parenthesis_depth);
-		return expr_node(composite_token, dot_expr, composition_expr);
+		auto composition_expr = compositionExpression(input, parenthesis_depth);
+		return new BinaryExpression(composite_token, dot_expr, composition_expr);
 	}
 	else return dot_expr;
 }
 
-private Node DotExpression(Range)(ref Range input, ref uint parenthesis_depth)
+private AST dotExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	if (isTokenRange!Range)
 {
 	debug(parser) { writeln("dot_expression"); scope(exit) writeln("end dot_expression"); }
-	auto result = TemplateInstanceExpression(input, parenthesis_depth);
+	auto result = templateInstanceExpression(input, parenthesis_depth);
 	Token token_dot = { type:TokenType.dot, str:"." };
 	while (input.front.type == TokenType.dot) {
 		input.popFront();		// get rid of .
@@ -315,18 +327,18 @@ private Node DotExpression(Range)(ref Range input, ref uint parenthesis_depth)
 			writeln("An expression is expected after '.', not " ~ input.front.str);
 			return null;
 		}
-		auto templ_inst_expr = TemplateInstanceExpression(input, parenthesis_depth);
-		result = expr_node(token_dot, result, templ_inst_expr);
+		auto templ_inst_expr = templateInstanceExpression(input, parenthesis_depth);
+		result = new BinaryExpression(token_dot, result, templ_inst_expr);
 	}
 	return result;
 }
 
-private Node TemplateInstanceExpression(Range)(ref Range input, ref uint parenthesis_depth)
+private AST templateInstanceExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	if (isTokenRange!Range)
 {
 	debug(parser) { writeln("template_instance_expression"); scope(exit) writeln("end template_instance_expression"); }
-	import parser.type: isFirstOfType, FunctionType;
-	auto result = AtomExpression(input, parenthesis_depth);
+	import parser.type: isFirstOfType, functionType;
+	auto result = atomExpression(input, parenthesis_depth);
 	Token token_qt = { type:TokenType.template_instance_type, str:"::" };
 	Token token_qe = { type:TokenType.template_instance_expr, str:"?"};
 	bool is_type;
@@ -339,8 +351,8 @@ private Node TemplateInstanceExpression(Range)(ref Range input, ref uint parenth
 				writeln("A type is expected after '::', not " ~ input.front.str);
 				return null;
 			}
-			auto type = FunctionType(input);
-			result = expr_node(token_qt, result, type);
+			auto type = functionType(input);
+			result = new BinaryExpression(token_qt, result, type);
 		}
 		// ? expr
 		else if (input.front.type == TokenType.template_instance_expr) {
@@ -350,8 +362,8 @@ private Node TemplateInstanceExpression(Range)(ref Range input, ref uint parenth
 				writeln("An expression is expected after '?', not " ~ input.front.str);
 				return null;
 			}
-			auto expr = AtomExpression(input, parenthesis_depth);
-			result = expr_node(token_qe, result, expr);
+			auto expr = atomExpression(input, parenthesis_depth);
+			result = new BinaryExpression(token_qe, result, expr);
 		}
 		else break;
 	}
@@ -372,7 +384,7 @@ StructLiteralBodies:
 	identifier : Expression , StructLiteralBodies
 */
 
-private Node AtomExpression(Range)(ref Range input, ref uint parenthesis_depth)
+private AST atomExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	if (isTokenRange!Range)
 {
 	debug(parser) { writeln("atom_expression"); scope(exit) writeln("end atom_expression"); }
@@ -380,12 +392,12 @@ private Node AtomExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	if (input.front.type.among!(dollar, identifier, integer, real_number, string_literal, true_, false_, this_)) {
 		auto token = input.front;
 		input.popFront();	// get rid of the token
-		return expr_node(token);
+		return new AST(ASTType.expr, token);
 	}
 	else if (input.front.type == lPar) {
 		++parenthesis_depth;
 		input.popFront();	// get rid of (
-		auto node = AssignExpression(input, parenthesis_depth);
+		auto node = assignExpression(input, parenthesis_depth);
 		if (input.front.type != rPar) {
 			writeln("')' was not found.");
 		}
@@ -395,41 +407,13 @@ private Node AtomExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	}
 	// lambda
 	else if (input.front.type == lambda) {
-		import parser.declaration: FunctionArgumentsDeclarations;
-		import parser.type: isFirstOfType, Type;
-		
-		auto lambda_token = input.front;
-		writeln("\t", lambda_token.str);
-		lambda_token.str = "__lambda__" ~ lambda_token.path ~ ":" ~ lambda_token.line_num.to!string ~ ":" ~ input.front.index_num.to!string;
-		writeln("\t", lambda_token.str);
-		auto func_node = new Node(NodeType.func, lambda_token);
-		func_node.child.length = 1;
-		
-		input.popFront();	// get rid of lambda
-		// \ : int a
-		if (input.front.type == TokenType.colon) {
-			input.popFront();	// get rid of :
-			if (!input.front.type.isFirstOfType()) {
-				// error
-				writeln("A type is expected after :, not " ~ input.front.str);
-				return null;
-			}
-			auto type = Type(input);
-			func_node.child[0] = type;
-		}
-		
-		FunctionArgumentsDeclarations(input, func_node, false, false);
-		// error
-		if (input.front.type != TokenType.assign) {
-			writeln("= is expected after the arguments of lambda, not " ~ input.front.str);
-		}
-		else input.popFront();	// get rid of =
-		func_node.child ~= Expression(input);
-		return func_node;
+		import parser.declaration: functionProcedureDeclaration;
+		return functionProcedureDeclaration(input, true);
 	}
 	// struct literal
 	else if (input.front.type == struct_) {
-		import parser.type;
+		assert (0, "struct literal has not implemented");
+		/+import parser.type;
 		auto struct_token = input.front;
 		input.popFront();	// get rid of struct
 		// error
@@ -479,6 +463,7 @@ private Node AtomExpression(Range)(ref Range input, ref uint parenthesis_depth)
 			return null;
 		}
 		return result;
+		+/
 	}
 	// else if (input.front.type == struct)
 	else {
@@ -486,8 +471,8 @@ private Node AtomExpression(Range)(ref Range input, ref uint parenthesis_depth)
 		return null;
 	}
 }
-
-string stringofExpression(Node node) {
+/+
+string stringofExpression(AST node) {
 	import parser.defs: stringofNode;
 
 	//auto node = cast (ExprNode) n;
@@ -510,4 +495,4 @@ string stringofExpression(Node node) {
 		else return "(" ~ stringofNode(node.child[0]) ~ " " ~ node.token.str ~ " " ~ stringofNode(node.child[1]) ~ ")";
 	}
 }
-
++/

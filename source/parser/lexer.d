@@ -150,6 +150,15 @@ static const reserved_words = new TokenDict(
 	tuple("interface",       TokenType.interface_),
 );
 
+static const type_of_literal = new AATree!(TokenType, (a,b) => a<b, string) (
+	tuple(TokenType.integer,        "int"),
+	tuple(TokenType.real_number,    "real"),
+	tuple(TokenType.string_literal, "string"),
+	tuple(TokenType.true_,          "bool"),
+	tuple(TokenType.false_,         "bool"),
+
+);
+
 //Tuple!( dchar, immutable(Tuple!(string, "str", TokenType, "type"))[] )
 //Tuple!( dchar, immutable(Tuple!(string, "str", TokenType, "type")[]) )
 
@@ -321,6 +330,11 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 		if (ptr) token.type = *ptr;*/
 		
 		if (reserved_words.hasKey(token.str)) token.type = reserved_words[token.str];
+		// a token starting with '__'
+		if (token.str.length >= 2 && token.str[0] == '_' && token.str[1] == '_' && token.type == TokenType.identifier) {
+			writeln("a token starting '__' is reserved by compiler.");
+			token.str = "_1_" ~ token.str[2 .. $];
+		}
 	}
 	
 	// integer, real number
