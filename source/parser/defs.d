@@ -93,16 +93,60 @@ class WhenExpression:AST {
 }
 class TupleExpression:AST {
 	AST[] exprs;
-	this (AST[] es) {
-		ast_type = ASTType.expr, exprs = es;
+	this () {
+		ast_type = ASTType.expr;
 	}
 
 	override string stringof() @property {
+		import std.algorithm: max;
 		string result = "(";
 		foreach (expr; exprs) {
 			result ~= (expr ? expr.stringof : "ERROR") ~ ", ";
 		}
-		return result[0 .. $-2] ~ ")";
+		return result[0 .. max($-2,1)] ~ ")";
+	}
+}
+class StructLiteral:AST {
+	AST type;
+	string[] members;
+	AST[] exprs;
+	this (Token tkn) {
+		ast_type = ASTType.expr, token = tkn;
+	}
+
+	override string stringof() @property {
+		return "struct literal";
+	}
+}
+class ArrayLiteral:AST {
+	AST[] exprs;
+	this (Token tkn) {
+		ast_type = ASTType.expr, token = tkn;
+	}
+
+	override string stringof() @property {
+		import std.algorithm: max;
+		string result = "[";
+		foreach (expr; exprs) {
+			result ~= (expr ? expr.stringof : "ERROR") ~ ", ";
+		}
+		return result/*[0 .. max($-2,1)]*/ ~ "]";
+	}
+}
+class AssociativeArrayLiteral:AST {
+	AST[] keys;
+	AST[] values;
+	this (Token tkn) {
+		ast_type = ASTType.expr, token = tkn;
+	}
+
+	override string stringof() @property {
+		import std.algorithm: max;
+		string result = "[";
+		foreach (i; 0 .. keys.length) {
+			result ~= (keys[i] ? keys[i].stringof : "ERROR") ~ ":" ~ (values[i] ? values[i].stringof : "ERROR") ~ ", ";
+		}
+		return result[0 .. max($-2,1)] ~ "]";
 	}
 }
 
@@ -139,12 +183,14 @@ class TupleType:AST {
 	this () {
 		ast_type = ASTType.type;
 	}
+
 	override string stringof() @property {
+		import std.algorithm: max;
 		string result = "(";
 		foreach (type; types) {
 			result ~= (type ? type.stringof : "ERROR") ~ ", ";
 		}
-		return result[0 .. $-2] ~ ")";
+		return result[0 .. max($-2,1)] ~ ")";
 	}
 }
 
@@ -162,6 +208,12 @@ class Symbol:AST {
 		ast_type = ASTType.symbol;
 	}
 
+	override string stringof() @property {
+		string result = name.str;
+		if (type !is null) result ~= ":" ~ type.stringof;
+		if (body !is null) result ~= " " ~ body.stringof;
+		return result;
+	}
 }
 // func/proc declaration / labmda expression
 class Function:Symbol {
@@ -172,8 +224,9 @@ class Function:Symbol {
 	}
 
 	override string stringof() @property {
-		string result = token.str ~ " ";
-		if (type) result ~= ":" ~ type.stringof ~ " ";
+		string result = token.str;
+		if (type) result ~= ":" ~ type.stringof;
+		result ~= " ";
 		foreach (i, arg; arguments) {
 			if (arg is null) continue;
 			result ~= arg.name.str;
@@ -188,22 +241,33 @@ class Function:Symbol {
 	}
 }
 // struct/class/interface delaration
+// token records struct/class/interface
 class Struct:Symbol {
 	Symbol[] members;
-	this() {
+	this(Token tkn) {
 		ast_type = ASTType.symbol;
+		token = tkn;
 	}
 	override string stringof() @property {
-		return " **a struct** ";
+		string result = "struct {\n";
+		foreach (member; members) {
+			if (member is null) result ~= "ERROR\n";
+			else result ~= member.stringof ~ "\n";
+		}
+		return result ~= "}";
 	}
 }
+alias Class = Struct;
+alias Interface = Struct;
 // let declaration
 class LetDeclaration:AST {
 	Symbol[] symbols;
+	AST body;	// for the blcok initialization
 	this (Token tkn) {
 		ast_type = ASTType.let, token = tkn;
 	}
 	override string stringof() @property {
+		import std.algorithm: max;
 		string result = "let ";
 		foreach (symbol; symbols) {
 			if (symbol is null) continue;
@@ -212,7 +276,7 @@ class LetDeclaration:AST {
 			if (symbol.body !is null) result ~= " = " ~ symbol.body.stringof;
 			result ~= ", ";
 		}
-		return result[0 .. $-2] ~ ";";
+		return result[0 .. max($-2,1)] ~ ";";
 	}
 }
 // ast_type = if_
@@ -225,13 +289,13 @@ class IfElse:AST {
 	}
 	override string stringof() @property {
 		string result = "if ";
-		if (condition !is null) result ~= condition.stringof;
+		if (condition !is null) result ~= condition.stringof ~ " ";
 		else result ~= "ERROR";
 
 		if (if_block) result ~= if_block.stringof;
 		else result ~= "ERROR";
 
-		if (else_block) result ~= "else " ~ else_block.stringof;
+		if (else_block) result ~= " else " ~ else_block.stringof;
 
 		return result;
 	}
@@ -269,28 +333,3 @@ class Block:AST {
 		return result ~ "}";
 	}
 }
-/+
-string stringofNode(AST ast) {
-	import parser.expression: stringofExpression;
-	import parser.type: stringofType;
-	import parser.declaration: stringofFunction, stringofVariables, stringofStruct;
-	import parser.statement: stringofIfElseStatement, stringofWhileStatement, stringofBlockStatement;
-
-	if (ast is null) return "";
-	with(NodeType) switch (ast.node_type) {
-		/+case dummy:
-			if (ast.token.type == TokenType.string_literal) return "\"" ~ ast.token.str ~ "\"";
-			else return ast.token.str;
-		case expr:            return stringofExpression(ast);
-		case type: 		      return stringofType(ast);
-		case func:            return stringofFunction(ast);
-		case let:             return stringofVariables(ast);
-		case if_:             return stringofIfElseStatement(ast);
-		case while_:          return stringofWhileStatement(ast);
-		case block:           return stringofBlockStatement(ast);
-		case struct_:         return stringofStruct(ast);
-		+/
-		default: 		      return " SOMETHING ";
-	}
-}
-+/

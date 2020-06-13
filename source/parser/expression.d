@@ -19,15 +19,15 @@ unittest {
 	token_pusher = new TokenRange!string("a <= b > c");
 	node = expression(token_pusher);
 
-	//token_pusher = new TokenRange!string("reverse static_list::int?struct(S){a:3, b:4.4} .stringof");
-	//node = expression(token_pusher);
-	//node.stringof.writeln();
+	token_pusher = new TokenRange!string("reverse static_list::int?struct(S){a:(3,), b:(4.4, 9,)}?[]?[a:b,]?[c, true]?[a, true, false,] .stringof");
+	node = expression(token_pusher);
+	node.stringof.writeln();
 }
 
 bool isFirstOfExpression(TokenType a) {
 	with(TokenType)
 		return a.among!(
-			add, sub, not, lPar, lambda, dollar, identifier,
+			add, sub, not, lPar, lBrack, lambda, dollar, identifier,
 			integer, real_number, /*character,*/ string_literal,
 			true_, false_, this_, struct_
 		) != 0;
@@ -37,9 +37,46 @@ AST expression(Range)(ref Range input)
 	if (isTokenRange!Range)
 {
 	uint parenthesis_depth;
-	return assignExpression(input, parenthesis_depth);
+	return commaExpression(input, parenthesis_depth);
 }
-//alias NonAssignExpression = SharpExpression;
+
+AST commaExpression(Range)(ref Range input, ref uint parenthesis_depth)
+	if (isTokenRange!Range)
+{
+	debug(parser) { writeln("comma_expression"); scope(exit) writeln("end comma_expression"); }
+	if (parenthesis_depth == 0) return pipelineExpression(input, parenthesis_depth);
+	AST[] members;
+	with (TokenType)
+	if (input.front.type == lPar) {
+		input.popFront();	// get rid of (
+		while (true) {
+			if (input.front.type == TokenType.rPar) { input.popFront(); break; }	// get rid of )
+			else if (input.front.type.isFirstOfExpression()) {
+				members ~= assignExpression(input, parenthesis_depth);
+			}
+			// error
+			else {
+				writeln("An expression is expected in a tuple (0, true, ...), not " ~ input.front.str);
+				input.popFront();
+				break;
+			}
+
+			if (input.front.type == TokenType.comma) input.popFront();	// get rid of ,
+		}
+		// (a) = a
+		if (members.length == 1) return members[0];
+		else if (members.length == 0) return null;
+		else {
+			auto result = new TupleExpression;
+			result.exprs = members;
+			return result;
+		}
+	}
+	else if (input.front.type.isFirstOfExpression()) { return assignExpression(input, parenthesis_depth); }
+	else {
+		assert(0);
+	}
+}
 
 AST assignExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	if (isTokenRange!Range)
@@ -80,13 +117,13 @@ private AST whenExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	if (isTokenRange!Range)
 {
 	debug(parser) { writeln("when_expression"); scope(exit) writeln("end when_expression"); }
-	auto comma_expr1 = commaExpression(input, parenthesis_depth);
+	auto pipe_expr1 = pipelineExpression(input, parenthesis_depth);
 	if (input.front.type == TokenType.when) {
 		auto when_token = input.front;
 		input.popFront();	// get rid of 'when'
 		// check if the following is the start of expression
 		if (!input.front.type.isFirstOfExpression()) { writeln("An expression is expected after 'when', not " ~ input.front.str); return null; }	// error
-		auto comma_expr2 = commaExpression(input, parenthesis_depth);
+		auto pipe_expr2 = pipelineExpression(input, parenthesis_depth);
 		// else not found error
 		if (input.front.type != TokenType.else_) {
 			writeln("'else' not found");
@@ -97,22 +134,9 @@ private AST whenExpression(Range)(ref Range input, ref uint parenthesis_depth)
 		// check if the following is the start of expression
 		if (!input.front.type.isFirstOfExpression()) { writeln("An expression is expected after ':', not " ~ input.front.str); return null; }	// error
 		auto when_expr = whenExpression(input, parenthesis_depth);
-		return new WhenExpression(when_token, comma_expr1, comma_expr2, when_expr);
+		return new WhenExpression(when_token, pipe_expr1, pipe_expr2, when_expr);
 	}
-	else return comma_expr1;
-}
-
-private AST commaExpression(Range)(ref Range input, ref uint parenthesis_depth)
-	if (isTokenRange!Range)
-{
-	debug(parser) { writeln("comma_expression"); scope(exit) writeln("end comma_expression"); }
-	return pipelineExpression(input, parenthesis_depth);
-	/+if (parenthesis_depth == 0) {
-		// error
-		if (!input.front.type.isFirstOfExpression()) { writeln("An expression is expected, not " ~ input.front.str); return null; }
-		return PipelineExpression(input, parenthesis_depth);
-	}
-	else assert(0, "Tuple has not implemented yet");+/
+	else return pipe_expr1;
 }
 
 /*************************************/
@@ -125,9 +149,9 @@ private static const op_ranks = new AATree!(TokenType, (a,b)=>a<b, int)(
 	tuple(TokenType.pipeline, 500),
 	tuple(TokenType.or,  600),
 	tuple(TokenType.and, 700),
-	tuple(TokenType.indexing, 800),
-	tuple(TokenType.ls,  1102), tuple(TokenType.leq, 1102), tuple(TokenType.gt,  1102),
-	tuple(TokenType.geq, 1102), tuple(TokenType.eq,  1102), tuple(TokenType.neq, 1102),
+	tuple(TokenType.ls,  1002), tuple(TokenType.leq, 1002), tuple(TokenType.gt,  1002),
+	tuple(TokenType.geq, 1002), tuple(TokenType.eq,  1002), tuple(TokenType.neq, 1002),
+	tuple(TokenType.indexing, 1100),
 	tuple(TokenType.add, 1200), tuple(TokenType.sub, 1200), tuple(TokenType.cat, 1200),
 	tuple(TokenType.mul, 1300), tuple(TokenType.div, 1300), tuple(TokenType.mod, 1300),
 );
@@ -396,12 +420,7 @@ private AST atomExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	}
 	else if (input.front.type == lPar) {
 		++parenthesis_depth;
-		input.popFront();	// get rid of (
-		auto node = assignExpression(input, parenthesis_depth);
-		if (input.front.type != rPar) {
-			writeln("')' was not found.");
-		}
-		else { input.popFront(); }
+		auto node = commaExpression(input, parenthesis_depth);
 		--parenthesis_depth;
 		return node;
 	}
@@ -412,58 +431,11 @@ private AST atomExpression(Range)(ref Range input, ref uint parenthesis_depth)
 	}
 	// struct literal
 	else if (input.front.type == struct_) {
-		assert (0, "struct literal has not implemented");
-		/+import parser.type;
-		auto struct_token = input.front;
-		input.popFront();	// get rid of struct
-		// error
-		if (input.front.type != lPar) {
-			writeln("'(' was expected for struct literals, not " ~ input.front.str);
-			return null;
-		}
-		input.popFront();	// get rid of (
-		auto type_node = Type(input);
-		// error
-		if (input.front.type != rPar) {
-			writeln("Enclosure ')' was expected for struct literals, not " ~ input.front.str);
-			return null;
-		}
-		input.popFront();	// get rid of )
-		auto result = expr_node(struct_token, type_node);
-		// error
-		if (input.front.type != lBrace) {
-			writeln("'{' was expected for struct literals, not" ~ input.front.str);
-			return null;
-		}
-		input.popFront();	// get rid of {
-		// StructLiteralBodies
-		while (true) {
-			if (input.front.type != identifier) break;
-			auto id_node = new Node(input.front);
-			input.popFront();	// get rid of identifier
-			// error
-			if (input.front.type != colon) {
-				writeln("':' was expected for the struct literals, not " ~ input.front.str);
-				input.popFront();
-				continue;
-			}
-			input.popFront();	// get rid of colon
-			if (!input.front.type.isFirstOfExpression()) {
-				writeln("An expression was expected after ':', not " ~ input.front.str);
-				input.popFront();
-				continue;
-			}
-			id_node.child = [Expression(input)];
-			result.child ~= id_node;
-			if (input.front.type == comma) input.popFront();
-		}
-		// error
-		if (input.front.type != rBrace) {
-			writeln("Enclosure '}' was expected for struct literals, not " ~ input.front.str);
-			return null;
-		}
-		return result;
-		+/
+		return structLiteral(input);
+	}
+	// (associative) array
+	else if (input.front.type == lBrack) {
+		return arrayLiteral(input);
 	}
 	// else if (input.front.type == struct)
 	else {
@@ -471,28 +443,162 @@ private AST atomExpression(Range)(ref Range input, ref uint parenthesis_depth)
 		return null;
 	}
 }
-/+
-string stringofExpression(AST node) {
-	import parser.defs: stringofNode;
 
-	//auto node = cast (ExprNode) n;
-	with(TokenType) switch (node.token.type) {
-	case when:
-		auto a = node.child[0], b = node.child[1], c = node.child[2];
-		return "((" ~ stringofNode(a) ~ ") when (" ~ stringofNode(b) ~ ") else (" ~ stringofNode(c) ~ "))" ;
-	case struct_:
-		//return "struct () {}, " ~ node.child.length.to!string;
-		string result = "struct(" ~ stringofNode(node.child[0]) ~ ") {";
-		foreach (id_node; node.child[1 .. $]) {
-			if (id_node is null) result ~= " /+ERROR+/, ";
-			else result ~= id_node.token.str ~ ":" ~ stringofNode(id_node.child[0]) ~ ", ";
+StructLiteral structLiteral(Range)(ref Range input)
+	if (isTokenRange!Range)
+{
+	import parser.type: type, isFirstOfType;
+
+	// get rid of struct
+	auto struct_token = input.front;
+	input.popFront();
+	if (input.front.type != TokenType.lPar) {
+		writeln("A struct literal needs ( ) to enclose the struct name.");
+		return null;
+	}
+	else input.popFront();	// get rid of (
+
+	if (!input.front.type.isFirstOfType()) {
+		writeln("A type is expected after 'struct (', not " ~ input.front.str);
+		return null;
+	}
+	auto result = new StructLiteral(struct_token);
+	result.type = type(input);
+
+	if (input.front.type != TokenType.rPar) {
+		writeln("')' not found for the struct (S).");
+		return null;
+	}
+	else input.popFront();	// get rid of )
+
+	if (input.front.type != TokenType.lBrace) {
+		writeln("'{' is needed for a struct literal body.");
+		return null;
+	}
+	else input.popFront();	// get rid of {
+
+	with (TokenType)
+	while (true) {
+		if (input.front.type == rBrace) { input.popFront(); break; }	// get rid of }
+		if (input.front.type != identifier) {
+			writeln("An identifier is expected in the body of a struct literal, not " ~ input.front.str);
+			return null;
 		}
-		return result[0 .. $-2] ~ "}";
-	default:
-		if (node.child[0] is null && node.child[1] is null )
-			if (node.token.type == TokenType.string_literal) return `"` ~ node.token.str ~ `"`;
-			else return node.token.str;
-		else return "(" ~ stringofNode(node.child[0]) ~ " " ~ node.token.str ~ " " ~ stringofNode(node.child[1]) ~ ")";
+		else result.members ~= input.front.str;
+		input.popFront();	// get rid of id
+
+		if (input.front.type != colon) {
+			writeln("':' expected after an identifer in a struct literal, not " ~ input.front.str);
+			return null;
+		}
+		else input.popFront();	// get rid of :
+
+		if (!input.front.type.isFirstOfExpression()) {
+			writeln("An expression expected after ':' in a struct literal, not " ~ input.front.str);
+			return null;
+		}
+		else result.exprs ~= expression(input);
+
+		if (input.front.type == comma) input.popFront();	// get rid of ,
+	}
+	return result;
+}
+
+AST arrayLiteral(Range)(ref Range input)
+	if (isTokenRange!Range)
+{
+	auto lBrack_token = input.front;
+	input.popFront();	// get rid of ]
+	with (TokenType)
+	// [ ]
+	if (input.front.type == rBrack) {
+		input.popFront();	// get rid of ]
+		return new ArrayLiteral(lBrack_token);
+	}
+	else if (!input.front.type.isFirstOfExpression()) {
+		writeln("An expression expected after '[', not " ~ input.front.str);
+		return null;
+	}
+
+	// [ Expression
+	auto first_expr = expression(input);
+	with (TokenType)
+	// [ Expression ]
+	if (input.front.type == rBrack) {
+		auto result = new ArrayLiteral(lBrack_token);
+		result.exprs = [first_expr];
+		input.popFront();	// get rid of ]
+		return result;
+	}
+	// [ Expression ,
+	else if (input.front.type == comma) {
+		input.popFront();	// get rid of ,
+		auto result = new ArrayLiteral(lBrack_token);
+		result.exprs = [first_expr];
+		while (true) {
+			if (input.front.type == TokenType.rBrack) { input.popFront(); break; }	// get rid of )
+			else if (input.front.type.isFirstOfExpression()) {
+				result.exprs ~= expression(input);
+			}
+			// error
+			else {
+				writeln("An expression is expected in an array [0, 1, ...], not " ~ input.front.str);
+				input.popFront();
+				break;
+			}
+
+			if (input.front.type == TokenType.comma) input.popFront();	// get rid of ,
+		}
+		return result;
+	}
+	// [ Expression :
+	else if (input.front.type == colon) {
+		input.popFront();	// get rid of :
+		AST first_value;
+		if (!input.front.type.isFirstOfExpression()) {
+			writeln("An expression exected after ':' in an associative array [0:true, 1:false, ...], not " ~ input.front.str);
+		}
+		// [ Expression : Expression
+		else first_value = expression(input);
+		auto result = new AssociativeArrayLiteral(lBrack_token);
+		result.keys = [first_expr];
+		result.values = [first_value];
+		// [ Expression : Expression ]
+		if (input.front.type == rBrack) return result;
+		else if (input.front.type == comma) input.popFront();
+		else {
+			writeln("',' or ']' is expected in an associative array literal, not " ~ input.front.str);
+		}
+		while (true) {
+			if (input.front.type == TokenType.rBrack) { input.popFront(); break; }	// get rid of )
+			else if (input.front.type.isFirstOfExpression()) {
+				result.keys ~= expression(input);
+				if (input.front.type != colon) {
+					writeln("':' is expected in an associative array literal, not " ~ input.front.str);
+					result.values ~= null;
+					break;
+				}
+				input.popFront();
+				if (!input.front.type.isFirstOfExpression()) {
+					writeln("An expression exected after ':' in an associative array [0:true, 1:false, ...], not " ~ input.front.str);
+					result.values ~= null;
+					break;
+				}
+				result.values ~= expression(input);
+			}
+			// error
+			else {
+				writeln("An expression is expected in an array [0, 1, ...], not " ~ input.front.str);
+				input.popFront();
+				break;
+			}
+
+			if (input.front.type == TokenType.comma) input.popFront();	// get rid of ,
+		}
+		return result;
+	}
+	else {
+		writeln("Invalid (associative) array literal, found " ~ input.front.str);
+		return null;
 	}
 }
-+/

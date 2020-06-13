@@ -9,7 +9,7 @@ unittest {
 	
 	//auto token_pusher = new TokenRange!string("f -> int[][string[a -> b]]");
 	//auto token_pusher = new TokenRange!string("(a -> b) -> (b -> c) -> (a -> c)");
-	auto token_pusher = new TokenRange!string("*[var int:[a]]");
+	auto token_pusher = new TokenRange!string("*[var int:[(a,b,)]]");
 	auto node = type(token_pusher);
 	node.stringof.writeln();
 }
@@ -33,10 +33,10 @@ FunctionType:
 	VarType
 
 VarType:
-	var ListType
-	ListType
+	var ArrayType
+	ArrayType
 
-ListType:
+ArrayType:
 	[ Type : Type ]		// [T : S] is [] --- T, S
 	[ Type ]				// [T] is [] --- T, null
 	*Type					// *T is * --- T
@@ -104,20 +104,20 @@ AST varType(Range)(ref Range input)
 		input.popFront();	// get rid of var
 		// check if the following is the start of type
 		if (!input.front.type.isFirstOfType()) { writeln("A type is expected after 'var' "); return null; }	// error
-		auto list_type = listType(input);
+		auto list_type = arrayType(input);
 		return new BinaryType(var_token, list_type);
 	}
 	else {
 		// check if the following is the start of type
 		if (!input.front.type.isFirstOfType()) { writeln("A type is expected, not ", input.front.str); return null; }	// error
-		else return listType(input);
+		else return arrayType(input);
 	}
 }
 
-AST listType(Range)(ref Range input)
+AST arrayType(Range)(ref Range input)
 	if (isTokenRange!Range)
 {
-	// [ ListType ]  [ ListType : ListType ]
+	// [ Type ]  [ Type : Type ]
 	if (input.front.type == TokenType.lBrack) {
 		auto lBrack_token = input.front;
 		input.popFront();	// get rid of [
@@ -196,11 +196,9 @@ AST tupleType(Range)(ref Range input)
 	AST[] members;
 	input.popFront();	// get rid of (
 	while (true) {
+		if (input.front.type == TokenType.rPar) { input.popFront(); break; }	// get rid of )
 		if (input.front.type.isFirstOfType()) {
 			members ~= type(input);
-		}
-		else if (input.front.type == TokenType.rPar) {
-			break;
 		}
 		// error
 		else {

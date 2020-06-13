@@ -41,13 +41,6 @@ ForeachForeach_reverseIdentifierDeclarations:
     Identifier: Type , ForeachForeach_reverseIdentifierDeclarations
 */
 
-/*
-if E S1 else S2 has AST
-if ---> E, S1, S2
-if E S1 has AST
-if ---> E, S1, null
-*/
-
 unittest {
     writeln("\n#### parse/statement.d unittest1");
     import parser.defs : TokenRange;
@@ -58,10 +51,10 @@ unittest {
         if n > 0 { writeln "positive"; } else if n < 0 { writeln "negative"; } else { writeln "0"; }
         var counter = 0;
         while counter < 10 { writeln counter "-th visit"; counter.inc; }
-        /+struct S {
+        struct S {
             let a: var int, b: [var int];
             func: var int f = b !! a^^2;
-        }+/
+        }
     }`);
     auto node = statement(token_pusher);
     node.stringof.writeln();
@@ -93,7 +86,7 @@ AST statement(Range)(ref Range input)
     with (TokenType)
     // StructDeclaration
     if      (input.front.type == TokenType.struct_ && input.lookahead.type != lPar) {
-        return null;
+        return structDeclaration(input);
     }
     // Expression
     else if (input.front.type.isFirstOfExpression()) {
@@ -134,20 +127,7 @@ Block blockStatement(Range)(ref Range input)
     input.popFront();   // get rid of }
     return result;
 }
-/+
-string stringofBlockStatement(AST node) {
-    import parser.defs: stringofNode;
-    import std.conv:to;
-    string result = /*node.child.length.to!string ~ */"{\n";
-    foreach (stmt; node.child) {
-        result ~= stringofNode(stmt);
-        if (stmt is null) { result ~= " NULL\n"; break; }
-        if (stmt.node_type == ASTType.expr) result ~= ";";
-        result ~= "\n";
-    }
-    return result ~= "}";
-}
-+/
+
 IfElse ifElseStatement(Range)(ref Range input)
     if (isTokenRange!Range)
 {
@@ -193,14 +173,7 @@ IfElse ifElseStatement(Range)(ref Range input)
     if_else_node.else_block = statement2;
     return if_else_node;
 }
-/+
-string stringofIfElseStatement(AST node) {
-    import parser.defs: stringofNode;
-    string result = "if" ~ stringofNode(node.child[0]) ~ stringofNode(node.child[1]);
-    if (node.child[2] !is null) result ~= " else " ~ stringofNode(node.child[2]);
-    return result;
-}
-+/
+
 While whileStatement(Range)(ref Range input)
     if (isTokenRange!Range)
 {
@@ -228,10 +201,3 @@ While whileStatement(Range)(ref Range input)
     while_node.block = block_statement;
     return while_node;
 }
-/+
-string stringofWhileStatement(AST node) {
-    import parser.defs: stringofNode;
-    string result = "while" ~ stringofNode(node.child[0]) ~ stringofNode(node.child[1]);
-    return result;
-}
-+/

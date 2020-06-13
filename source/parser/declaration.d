@@ -16,7 +16,7 @@ unittest {
 	node = letVarDeclaration(token_pusher);
 	node.stringof.writeln();
 
-	token_pusher = new TokenRange!string("var x:real = 0xFF.FF, y: var int = 12;");
+	token_pusher = new TokenRange!string("var x:(int, real) = (9, 0xFF.FF), y:(var int, [int],) = (12,2,);");
 	node = letVarDeclaration(token_pusher);
 	node.stringof.writeln();
 }
@@ -80,7 +80,7 @@ StructDeclarationBody:
 */
 
 
-AST letVarDeclaration(Range)(ref Range input)
+LetDeclaration letVarDeclaration(Range)(ref Range input)
 	if (isTokenRange!Range)
 {
 	import parser.type: type, isFirstOfType;
@@ -214,16 +214,10 @@ AST letVarDeclaration(Range)(ref Range input)
 			// id (: T) (= Expression) ,
 			if (input.front.type == comma) {
 				input.popFront();	// get rid of ,
-				continue;
 			}
 			// id (: T) (= Expression) ;
-			else if (input.front.type == semicolon) {
+			if (input.front.type == semicolon) {
 				input.popFront();	// get rid of ;
-				return result;
-			}
-			// error
-			else {
-				writeln("';' or ',' expected in the let/var declaration, not " ~ input.front.str);
 				return result;
 			}
 		}
@@ -234,23 +228,8 @@ AST letVarDeclaration(Range)(ref Range input)
 		return null;
 	}
 }
-/+
-string stringofVariables(AST node) {
-	import parser.defs: stringofNode;
 
-	string result = node.token.str ~ " ";
-	foreach (node2; node.child) {
-		result ~= node2.token.str;
-		if (node2.child[0]) result ~= ": " ~ stringofNode(node2.child[0]) ~ " ";
-		if (node2.child[1]) result ~= " = " ~ stringofNode(node2.child[1]) ~ " ";
-		result ~= ", ";
-	}
-	result = result[0 .. $-2] ~ ";";
-	return result;
-}
-+/
-
-Function functionProcedureDeclaration(Range)(ref Range input, bool lambda = false)
+Function functionProcedureDeclaration(Range)(ref Range input, bool is_lambda = false)
 	if (isTokenRange!Range)
 {
 	auto result = new Function;
@@ -274,12 +253,12 @@ Function functionProcedureDeclaration(Range)(ref Range input, bool lambda = fals
 
 	// func (: Type) id
 	// error
-	if (!lambda && input.front.type != TokenType.identifier) {
+	if (!is_lambda && input.front.type != TokenType.identifier) {
 		writeln("An identifier is expected after 'func (: T)', not " ~ input.front.str);
 		return null;
 	}
 
-	if (!lambda) {
+	if (!is_lambda) {
 		result.name = input.front;
 		input.popFront();	// get rid of id
 	}
@@ -288,7 +267,7 @@ Function functionProcedureDeclaration(Range)(ref Range input, bool lambda = fals
 		result.name.str = "\\";
 	}
 
-	functionArgumentsDeclarations(input, result, lambda);
+	functionArgumentsDeclarations(input, result, is_lambda);
 
 	AST expr_node;
 
@@ -305,11 +284,13 @@ Function functionProcedureDeclaration(Range)(ref Range input, bool lambda = fals
 			expr_node = expression(input);
 		}
 		result.body = expr_node;
-		// error
-		if (input.front.type != semicolon) {
-			writeln("';' was expected after the expression, not " ~ input.front.str);
+		if ( !is_lambda ) {
+			// error
+			if (input.front.type != semicolon) {
+				writeln("';' was expected after the expression, not " ~ input.front.str);
+			}
+			else input.popFront();	// get rid of ;
 		}
-		else input.popFront();	// get rid of ;
 	}
 	// block statements
 	// else if (input.front.type == TokenType.lBrace) {}
@@ -321,7 +302,7 @@ Function functionProcedureDeclaration(Range)(ref Range input, bool lambda = fals
 	return result;
 }
 
-void functionArgumentsDeclarations(Range)(ref Range input, ref Function func_node, bool lambda = false) {
+void functionArgumentsDeclarations(Range)(ref Range input, ref Function func_node, bool is_lambda) {
 	import parser.expression: isFirstOfExpression, expression;
 	import parser.type: isFirstOfType, type;
 	import std.conv: to;
@@ -353,7 +334,7 @@ void functionArgumentsDeclarations(Range)(ref Range input, ref Function func_nod
 					writeln("The argument 'any' cannot have a condition");
 				}
 				// error
-				if ( lambda ) {
+				if ( is_lambda ) {
 					writeln("Conditions are not allowed for lambdas.");
 				}
 				input.popFront();	// get rid of (
@@ -375,7 +356,7 @@ void functionArgumentsDeclarations(Range)(ref Range input, ref Function func_nod
 		// Literal
 		else if (input.front.type.among!(integer, string_literal, real_number, true_, false_)) {
 			// lambdas
-			if ( lambda ) {
+			if ( is_lambda ) {
 				writeln("Literals for arguments are not allowed");
 			}
 			auto argument = new Symbol;
@@ -396,26 +377,8 @@ void functionArgumentsDeclarations(Range)(ref Range input, ref Function func_nod
 		else break;
 	}
 }
-/+
-string stringofFunction(AST node) {
-	import parser.defs: stringofNode;
-	
-	string result = node.node_type == NodeType.func ? "func " : "proc ";
-	result ~= node.token.str;
-	if (node.child[0]) result ~= ":" ~ stringofNode(node.child[0]) ~ " ";
-	else result ~= " ";
-	foreach (node2; node.child[1 .. $-1]) {
-		result ~= node2.token.str;
-		if (node2.child[0]) result ~= ":" ~ stringofNode(node2.child[0]) ~ " ";
-		if (node2.child[1]) result ~= "(" ~ stringofNode(node2.child[1]) ~ ") ";
-		if (node2.child[0] is null && node2.child[1] is null) result ~= " ";
-	}
-	result ~= "= " ~ stringofNode(node.child[$-1]);
-	return result;
-}
-+/
-/+
-Node StructDeclaration(Range)(ref Range input)
+
+Struct structDeclaration(Range)(ref Range input)
 	if (isTokenRange!Range)
 {
 	auto struct_token = input.front;
@@ -426,15 +389,16 @@ Node StructDeclaration(Range)(ref Range input)
 		return null;
 	}
 	// struct identifier
-	auto result = new Node(NodeType.struct_, input.front);
+	auto result = new Struct(input.front);
 	input.popFront();	// get rid of identifier;
 	// error
 	if (input.front.type != TokenType.lBrace) {
 		writeln("'{' is expected after 'struct " ~ result.token.str ~ "', not " ~ input.front.str);
 		return null;
 	}
+	// struct identifer {
 	else input.popFront();	// get rid of {
-	result.child = StructDeclarationBoodies(input);
+	result.members = structDeclarationBoodies(input);
 	if (input.front.type != TokenType.rBrace) {
 		writeln("Enclosure '}' is expected, not " ~ input.front.str);
 		return null;
@@ -443,31 +407,22 @@ Node StructDeclaration(Range)(ref Range input)
 	return result;
 }
 
-Node[] StructDeclarationBoodies(Range)(ref Range input)
+Symbol[] structDeclarationBoodies(Range)(ref Range input)
 	if (isTokenRange!Range)
 {
-	Node[] result;
+	Symbol[] result;
 	with (TokenType)
 	while (true) {
-		if      (input.front.type.among!(let, var)) {
-			result ~= LetVarDeclaration(input);
+		if (input.front.type.among!(func, proc)) result ~= functionProcedureDeclaration(input);
+		else if (input.front.type.among!(let, var)) result ~= letVarDeclaration(input).symbols;
+		else if (input.front.type == rBrace) break;
+		// error
+		else {
+			writeln("A function or let/var declaration is expected, not " ~ input.front.str);
+			break;
 		}
-		else if (input.front.type.among!(func, proc)) {
-			result ~= FunctionProcedureDeclaration(input);
-		}
-		else break;
 	}
 	return result;
 }
 
-string stringofStruct(Node node) {
-	import parser.defs: stringofNode;
-
-	string result = "struct " ~ node.token.str ~ "{\n";
-	foreach (node2; node.child) {
-		result ~= stringofNode(node2) ~ "\n";
-	}
-	result ~= "}";
-	return result;
-}
-+/
+alias classDeclaration = structDeclaration;

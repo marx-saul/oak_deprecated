@@ -58,7 +58,7 @@ enum TokenType : uint {
 	if_, else_, when, let, var, func, proc, any, this_,
 	while_, foreach_, foreach_reverse_,
 	struct_, class_, interface_,
-    
+
 	// expression symbols
 	add, sub, mul, div, mod,    // + - * / %
 	//inc, dec,					// ++ --
@@ -102,7 +102,7 @@ struct Token {
 	ulong line_num;
 	ulong index_num;
 	string path;
-    
+
 	// literal value
 	long int_val;
 	double real_val;
