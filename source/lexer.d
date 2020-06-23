@@ -1,5 +1,11 @@
-module parser.lexer;
-import std.stdio, std.variant, std.range, std.ascii, std.typecons, std.algorithm, std.array;
+module lexer;
+import std.stdio;
+import std.ascii;
+import std.algorithm;
+import std.array;
+import std.typecons: tuple, Tuple;
+import std.traits: ReturnType;
+import std.range: isInputRange;
 import std.meta: aliasSeqOf;
 import std.conv: to;
 import aatree;
@@ -28,7 +34,7 @@ unittest {
 		
 		:;,+-*/%^^$+=-=*=/=%= <<=>>= .. ...||&&!!= 
 		
-		true false if else when let var def
+		true false if else when let
 	`;
 	immutable(dchar)[] lookahead;
 	ulong line_num = 1;
@@ -42,55 +48,107 @@ unittest {
 }
 +/
 
-// when adding a token, alter this enum TokenType, (reserved_words/reserved_symbols)
-enum TokenType : uint {
-	error, dummy,
-	identifier,
-	
-	// literal
-	integer, real_number, /*character,*/ string_literal,
-	true_, false_,
-	
-	// type
-	int_, real_, string_, bool_,
-	
-	// reserved words
-	if_, else_, when, let, var, func, proc, any, this_,
-	while_, foreach_, foreach_reverse_,
-	struct_, class_, interface_,
+public struct Location {
+	ulong line_num;
+	ulong index_num;
+	string[] path;
+}
 
-	// expression symbols
-	add, sub, mul, div, mod,    // + - * / %
-	//inc, dec,					// ++ --
-	pow,						// ^^
-	cat,						// ~ (concatation)
-	and, or, not, 				// && || !
-	eq, neq, ls, gt, leq, geq,	// ==, !=, <, >, <=, >=, 
-	composition,				// @  (composition of functions) 
-	dot, dotdot,				// . ..
-	right_arrow, 				// -> (right_arrow)
-	indexing,					// !!
-	template_instance_expr,		// ?
-	template_instance_type,		// ::
-	dollar,						// $
-	sharp,						// #
-	pipeline,					// |>
-	lambda,						// \ 
-	assign,						// =
-	add_assign, sub_assign, mul_assign, div_assign, mod_assign, cat_assign, // += -= *= /= %= ~=
-	
-	// for parsers
-	unary_op, //u_add, u_sub, u_not, u_inc, u_dec,
-	empty_tuple,	// ()
-	
+// when adding a token, alter this enum TokenType, (reserved_words/reserved_symbols)
+enum TokenType {
+	dummy,
+
+	identifier,
+
+	integer,
+	real_number,
+	string_literal,
+
+	// reserved words
+	true_,
+	false_,
+	null_,
+
+	int_,
+	real_,
+	string_,
+	bool_,
+	void_,
+
+	struct_,
+	class_,
+	interface_,
+
+	immut,
+	const_,
+	inout_,
+	ref_,
+
+	private_,
+	protected_,
+	package_,
+	public_,
+	abstract_,
+
+	pure_,
+	lazy_,
+
+	import_,
+	module_,
+	let,
+	func,
+	shadow,
+
+	any,
+	this_,
+	super_,
+
+	if_,
+	else_,
+	while_,
+	foreach_,
+	foreach_reverse_,
+	return_,
+
+	// binary(unary) operator (precedence order)
+	param_expr,	param_type,				// :. ::
+	dot,								// .
+	composition,						// @
+	dotdot,								// indexing, slicing { } { .. }
+	apply, 								// function application f x
+	pow,								// ^^
+	//unary
+	u_sub, bit_not, not, ref_of, deref,	// -- ~ not # !
+	mul, div, mod,						// * / %
+	add, sub, cat,						// + - ++
+	lshift, rshift, log_shift,			// << >> >>>
+
+	eq, neq, ls, gt, leq, geq, 			// ==, !=, <, >, <=, >=,
+	in_, nin, is_, nis,					// in !in is !is
+
+	bit_and,							// &
+	bit_xor,							// ^
+	bit_or,								// |
+	and,								// and
+	xor,								// xor
+	or,									// or
+	app,								// app
+	pipeline,							// |>
+	when,								// when
+	match,								// match
+	assign,								// =
+	add_assign, sub_assign, mul_assign,	// += -= *=
+	div_assign, mod_assign, cat_assign, // /= %= ++=
+	and_assign, xor_assign,  or_assign,	// &= ^= |=
+
 	// other symbols
-	colon, semicolon, comma,
-	lPar, rPar,                 // ( )
-	lBrack, rBrack,				// [ ]
-	lBrace, rBrace,				// { }
-	
-	// dummy tokens
-	app, postfix,
+	dollar,								// $
+	lambda,								// \
+	right_arrow,						// ->
+	colon, semicolon, comma,			// : ; ,
+	lPar, rPar,                 		// ( )
+	lBrack, rBrack,						// [ ]
+	lBrace, rBrace,						// { }
 	
 	// EOF
 	end_of_file,
@@ -99,14 +157,12 @@ enum TokenType : uint {
 struct Token {
 	TokenType type;
 	string str;
-	ulong line_num;
-	ulong index_num;
-	string path;
+	Location loc;
 
 	// literal value
-	long int_val;
-	double real_val;
-	alias string_val = str;
+	//long int_val;
+	//double real_val;
+	//alias string_val = str;
 	// will be implemented by this
 	//Variant literal;
 }
@@ -129,25 +185,53 @@ alias TokenDict = StringDict!(TokenType);
 static const reserved_words = new TokenDict(
 	tuple("true",            TokenType.true_),
 	tuple("false",           TokenType.false_),
+	tuple("null",            TokenType.null_),
+
 	tuple("int",             TokenType.int_),
 	tuple("real",            TokenType.real_),
 	tuple("string",          TokenType.string_),
 	tuple("bool",            TokenType.bool_),
-	tuple("if",              TokenType.if_),
-	tuple("else",            TokenType.else_),
-	tuple("let",             TokenType.let),
-	tuple("var",             TokenType.var),
-	tuple("func",            TokenType.func),
-	tuple("proc",            TokenType.proc),
-	tuple("when",            TokenType.when),
-	tuple("any",             TokenType.any),
-	tuple("this",            TokenType.this_),
-	tuple("while",           TokenType.while_),
-	tuple("foreach",         TokenType.foreach_),
-	tuple("foreach_reverse", TokenType.foreach_reverse_),
+	tuple("void",            TokenType.void_),
+
 	tuple("struct",          TokenType.struct_),
 	tuple("class",           TokenType.class_),
 	tuple("interface",       TokenType.interface_),
+
+	tuple("import",          TokenType.import_),
+	tuple("module",          TokenType.module_),
+	tuple("func",            TokenType.func),
+	tuple("let",             TokenType.let),
+	tuple("func",            TokenType.func),
+
+	tuple("immut",           TokenType.immut),
+	tuple("const",           TokenType.const_),
+	tuple("inout",           TokenType.inout_),
+	tuple("ref",             TokenType.ref_),
+
+	tuple("private",         TokenType.private_),
+	tuple("protected",       TokenType.protected_),
+	tuple("package",         TokenType.package_),
+	tuple("public",          TokenType.public_),
+
+	tuple("any",             TokenType.any),
+	tuple("this",            TokenType.this_),
+	tuple("super",           TokenType.super_),
+
+	tuple("if",              TokenType.if_),
+	tuple("else",            TokenType.else_),
+	tuple("while",           TokenType.while_),
+	tuple("foreach",         TokenType.foreach_),
+	tuple("foreach_reverse", TokenType.foreach_reverse_),
+
+	tuple("app",             TokenType.app),
+	tuple("in",              TokenType.in_),
+	tuple("is",              TokenType.is_),
+	tuple("not",             TokenType.not),
+	tuple("and",             TokenType.and),
+	tuple("xor",             TokenType.xor),
+	tuple("or",              TokenType.or),
+	tuple("when",            TokenType.when),
+	tuple("match",           TokenType.match),
 );
 
 static const type_of_literal = new AATree!(TokenType, (a,b) => a<b, string) (
@@ -156,7 +240,6 @@ static const type_of_literal = new AATree!(TokenType, (a,b) => a<b, string) (
 	tuple(TokenType.string_literal, "string"),
 	tuple(TokenType.true_,          "bool"),
 	tuple(TokenType.false_,         "bool"),
-
 );
 
 //Tuple!( dchar, immutable(Tuple!(string, "str", TokenType, "type"))[] )
@@ -164,28 +247,53 @@ static const type_of_literal = new AATree!(TokenType, (a,b) => a<b, string) (
 
 alias SE = Tuple!(string, "str", TokenType, "type");
 static const reserved_symbols = new AATree!(dchar, (a,b) => a<b, SE[])(
-	tuple(cast(dchar) '+', [SE("+", TokenType.add), /*SE("++", TokenType.inc),*/ SE("+=", TokenType.add_assign)]),
-	tuple(cast(dchar) '-', [SE("-", TokenType.sub), /*SE("--", TokenType.dec),*/ SE("-=", TokenType.sub_assign), SE("->", TokenType.right_arrow)]),
-	tuple(cast(dchar) '*', [SE("*", TokenType.mul), SE("*=", TokenType.mul_assign)]),
-	tuple(cast(dchar) '/', [SE("/", TokenType.div), SE("/=", TokenType.div_assign)]),
-	tuple(cast(dchar) '%', [SE("%", TokenType.mod), SE("%=", TokenType.mod_assign)]),
-	tuple(cast(dchar) '^', [SE("^^", TokenType.pow)]),
-	tuple(cast(dchar) '~', [SE("~", TokenType.cat), SE("~=", TokenType.cat_assign)]),
-	tuple(cast(dchar) '&', [SE("&&", TokenType.and)]),
-	tuple(cast(dchar) '|', [SE("||", TokenType.or), SE("|>", TokenType.pipeline)]),
-	tuple(cast(dchar) '!', [SE("!", TokenType.not), SE("!=", TokenType.neq), SE("!!", TokenType.indexing)]),
-	tuple(cast(dchar) '?', [SE("?", TokenType.template_instance_expr)]),
-	tuple(cast(dchar) '$', [SE("$", TokenType.dollar)]),
-	tuple(cast(dchar) '#', [SE("#", TokenType.sharp)]),
-	tuple(cast(dchar) ',', [SE(",", TokenType.comma)]),
-	tuple(cast(dchar) '\\', [SE("\\", TokenType.lambda)]),
-	tuple(cast(dchar) '=', [SE("=", TokenType.assign), SE("==", TokenType.eq)]),
-	tuple(cast(dchar) '<', [SE("<", TokenType.ls), SE("<=", TokenType.leq)]),
-	tuple(cast(dchar) '>', [SE(">", TokenType.gt), SE(">=", TokenType.geq)]),
-	tuple(cast(dchar) '.', [SE(".", TokenType.dot), SE("..", TokenType.dotdot)]),
-	tuple(cast(dchar) '@', [SE("@", TokenType.composition)]),
-	
-	tuple(cast(dchar) ':', [SE(":", TokenType.colon), SE("::", TokenType.template_instance_type)]),
+	tuple(cast(dchar) '+', [SE("+",   TokenType.add),
+							SE("++",  TokenType.cat),
+							SE("+=",  TokenType.add_assign),
+							SE("++=", TokenType.cat_assign)]),
+	tuple(cast(dchar) '-', [SE("-",   TokenType.sub),
+							SE("--",  TokenType.u_sub),
+							SE("-=",  TokenType.sub_assign),
+							SE("->",  TokenType.right_arrow)]),
+	tuple(cast(dchar) '*', [SE("*",   TokenType.mul),
+							SE("*=",  TokenType.mul_assign)]),
+	tuple(cast(dchar) '/', [SE("/",   TokenType.div),
+							SE("/=",  TokenType.div_assign)]),
+	tuple(cast(dchar) '%', [SE("%",   TokenType.mod),
+							SE("%=",  TokenType.mod_assign)]),
+	tuple(cast(dchar) '^', [SE("^",   TokenType.bit_xor),
+							SE("^^",  TokenType.pow),
+							SE("^=",  TokenType.xor_assign),]),
+	tuple(cast(dchar) '~', [SE("~",   TokenType.bit_not)]),
+	tuple(cast(dchar) '&', [SE("&",   TokenType.bit_and),
+							SE("&=",  TokenType.and_assign)]),
+	tuple(cast(dchar) '|', [SE("|",   TokenType.bit_or),
+							SE("|>",  TokenType.pipeline),
+							SE("|=",  TokenType.or_assign)]),
+	tuple(cast(dchar) '!', [SE("!",   TokenType.ref_of),
+							SE("!=",  TokenType.neq),
+							SE("!in", TokenType.nin),
+							SE("!is", TokenType.nis),]),
+	//tuple(cast(dchar) '?', [SE("?",   TokenType.ref_of)]),
+	tuple(cast(dchar) '#', [SE("#",   TokenType.deref)]),
+	tuple(cast(dchar) '$', [SE("$",   TokenType.dollar)]),
+	tuple(cast(dchar) ',', [SE(",",   TokenType.comma)]),
+	tuple(cast(dchar) '\\',[SE("\\",  TokenType.lambda)]),
+	tuple(cast(dchar) '=', [SE("=",   TokenType.assign),
+							SE("==",  TokenType.eq)]),
+	tuple(cast(dchar) '<', [SE("<",   TokenType.ls),
+							SE("<=",  TokenType.leq),
+							SE("<<",  TokenType.lshift)]),
+	tuple(cast(dchar) '>', [SE(">",   TokenType.gt),
+							SE(">=",  TokenType.geq),
+							SE(">>",  TokenType.rshift),
+							SE(">>>", TokenType.log_shift)]),
+	tuple(cast(dchar) '.', [SE(".",   TokenType.dot),
+							SE("..",  TokenType.dotdot)]),
+	tuple(cast(dchar) '@', [SE("@",   TokenType.composition)]),
+	tuple(cast(dchar) ':', [SE(":",   TokenType.colon),
+							SE("::",  TokenType.param_type),
+							SE(":.",  TokenType.param_expr)]),
 	tuple(cast(dchar) ';', [SE(";", TokenType.semicolon)]),
 	tuple(cast(dchar) '(', [SE("(", TokenType.lPar)]),
 	tuple(cast(dchar) ')', [SE(")", TokenType.rPar)]),
@@ -255,6 +363,7 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 		else return lookahead[k-1];
 	}
 	void unget(immutable dchar c) {
+		if (c == '\n') --line_num;
 		lookahead = [c] ~ lookahead;
 	}
 	
@@ -315,11 +424,12 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 		else break;
 	}
 	
-	Token token = { line_num:line_num, index_num:index_num, path:path };
+	Token token;
+	token.loc.line_num = line_num; token.loc.index_num = index_num;
 	
 	// identifier or reserved word
 	if (isAlpha(c) || c == '_') {
-		token.type = TokenType.identifier, token.line_num = line_num, token.index_num = index_num;
+		token.type = TokenType.identifier;
 		while (isAlphaNum(c) || c == '_') {
 			token.str ~= c;
 			c = nextChar();
@@ -339,140 +449,121 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 	
 	// integer, real number
 	else if (isDigit(c)) {
-		token.type = TokenType.integer, token.line_num = line_num, token.index_num = index_num;
+		token.type = TokenType.integer, token.loc.line_num = line_num, token.loc.index_num = index_num;
 		
 		// hexadecimal
 		if (c == '0' && lookAhead().among!('x', 'X')) {
 			auto c2 = nextChar();	// 'x'
-			token.str = "0" ~ c2.to!string;
+			token.str = "0x";
 			c = nextChar();
 			while (true) {
-				if (isDigit(c)) {
-					token.int_val *= 16;
-					token.int_val += c - '0';
+				if (c.among!(aliasSeqOf!"_0123456789abcdefABCDEF")) {
 					token.str ~= c;
 				}
-				else if (c.among!(aliasSeqOf!"abcdef")) {
-					token.int_val *= 16;
-					token.int_val += c - 'a' + 10;
-					token.str ~= c;
-				}
-				else if (c.among!(aliasSeqOf!"ABCDEF")) {
-					token.int_val *= 16;
-					token.int_val += c - 'A' + 10;
-					token.str ~= c;
-				}
-				// real number
+				// '.' found real number
 				else if (c == '.') {
-					if (lookAhead() == '.') {
+					// ..
+					if (lookAhead() == '.' || !lookAhead().among!(aliasSeqOf!"_0123456789abcdefABCDEF")) {
 						unget('.');
 						return token;
 					}
-					double exponent = 1.0;
-					
+
 					token.str ~= ".";
 					token.type = TokenType.real_number;
-					token.real_val = cast(double) token.int_val;
 					
 					c = nextChar();
 					while (true) {
-						exponent /= 16;
-						if (isDigit(c)) {
-							token.real_val += exponent * (c - '0');
+						if (c.among!(aliasSeqOf!"_0123456789abcdefABCDEF")) {
 							token.str ~= c;
 						}
-						else if (c.among!(aliasSeqOf!"abcdef")) {
-							token.real_val += exponent * (c - 'a' + 10);
-							token.str ~= c;
+						else {
+							unget(c);
+							return token;
 						}
-						else if (c.among!(aliasSeqOf!"ABCDEF")) {
-							token.real_val += exponent * (c - 'A' + 10);
-							token.str ~= c;
-						}
-						else if (c == '_') { token.str ~= c; }
-						else { unget(c); return token; }
 						c = nextChar();
 					}
 				}
-				else if (c == '_') { token.str ~= c; }
-				else { unget(c); return token; }
+				else {
+					unget(c);
+					return token;
+				}
 				c = nextChar();
 			}
 		}
 		// binary
 		else if (c == '0' && lookAhead().among!('b', 'B')) {
 			auto c2 = nextChar();	// 'b'
-			token.str = "0" ~ c2.to!string;
+			token.str = "0b";
 			c = nextChar();
 			while (true) {
-				if (c.among!('0', '1')) {
-					token.int_val *= 2;
-					token.int_val += c - '0';
+				if (c.among!(aliasSeqOf!"_01")) {
 					token.str ~= c;
 				}
-				// real number
+				// '.' found real number
 				else if (c == '.') {
-					if (lookAhead() == '.') {
+					// ..
+					if (lookAhead() == '.' || !lookAhead().among!(aliasSeqOf!"_01")) {
 						unget('.');
 						return token;
 					}
-					double exponent = 1.0;
-					
+
 					token.str ~= ".";
 					token.type = TokenType.real_number;
-					token.real_val = cast(double) token.int_val;
-					
+
 					c = nextChar();
 					while (true) {
-						exponent /= 2;
-						if (c.among!('0', '1')) {
-							token.real_val += exponent * (c - '0');
+						if (c.among!(aliasSeqOf!"_01")) {
 							token.str ~= c;
 						}
-						else if (c == '_') { token.str ~= c; }
-						else { unget(c); return token; }
+						else {
+							unget(c);
+							return token;
+						}
 						c = nextChar();
 					}
 				}
-				else if (c == '_') { token.str ~= c; }
-				else { unget(c); return token; }
+				else {
+					unget(c);
+					return token;
+				}
 				c = nextChar();
 			}
 		}
 		// 10
 		else {
+			token.str = c.to!string;
+			c = nextChar();
 			while (true) {
-				if (isDigit(c)) {
-					token.int_val *= 10;
-					token.int_val += c - '0';
+				if (c.among!(aliasSeqOf!"_0123456789")) {
 					token.str ~= c;
 				}
-				// real number
+				// '.' found real number
 				else if (c == '.') {
-					if (lookAhead() == '.') {
+					// ..
+					if (lookAhead() == '.' || !lookAhead().among!(aliasSeqOf!"_0123456789")) {
 						unget('.');
 						return token;
 					}
-					double exponent = 1.0;
-					
+
 					token.str ~= ".";
 					token.type = TokenType.real_number;
-					token.real_val = cast(double) token.int_val;
-					
+
 					c = nextChar();
 					while (true) {
-						exponent /= 10;
-						if (c.among!(aliasSeqOf!"0123456789")) {
-							token.real_val += exponent * (c - '0');
+						if (c.among!(aliasSeqOf!"_0123456789")) {
 							token.str ~= c;
 						}
-						else if (c == '_') { token.str ~= c; }
-						else { unget(c); return token; }
+						else {
+							unget(c);
+							return token;
+						}
 						c = nextChar();
 					}
 				}
-				else if (c == '_') { token.str ~= c; }
-				else { unget(c); return token; }
+				else {
+					unget(c);
+					return token;
+				}
 				c = nextChar();
 			}
 		}
@@ -480,7 +571,7 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 	
 	// string literal
 	else if (c == '"') {
-		token.type = TokenType.string_literal, token.line_num = line_num, token.index_num = index_num;
+		token.type = TokenType.string_literal, token.loc.line_num = line_num, token.loc.index_num = index_num;
 		while (true) {
 			c = nextChar();
 			if (c == '\\') {
@@ -510,7 +601,7 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 			
 			// by adding one character no token matches.
 			if (newSElist.length == 0) {
-				token.type = SElist[0].type, token.str = s[0 .. $-1], token.line_num = line_num, token.index_num = index_num;
+				token.type = SElist[0].type, token.str = s[0 .. $-1], token.loc.line_num = line_num, token.loc.index_num = index_num;
 				unget(s[$-1]);
 				return token;
 			}
@@ -519,7 +610,7 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 			// found
 			if (SElist.length == 1 && SElist[0].str.length == s.length /* equivalent to SElist[0].str == s */) {
 				//writeln("\t length 1");
-				token.type = SElist[0].type, token.str = s, token.line_num = line_num, token.index_num = index_num;
+				token.type = SElist[0].type, token.str = s, token.loc.line_num = line_num, token.loc.index_num = index_num;
 				return token;
 			}
 			// two or more possible tokens
@@ -533,9 +624,49 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 	}
 	
 	// EOF
-	else if (c == EOF) token.type = TokenType.end_of_file, token.str = "__EOF__", token.line_num = line_num, token.index_num = index_num;
+	else if (c == EOF) token.type = TokenType.end_of_file, token.str = "__EOF__", token.loc.line_num = line_num, token.loc.index_num = index_num;
 	
 	return token;
 }
+
+
+/* token pusher */
+enum isLexer(T) =
+	is(ReturnType!((T t) => t.front) == Token) &&
+	//is(ReturnType!((T t) => t.empty) == bool) &&
+	is( typeof( { T t; t.popFront(); } ) ) &&
+	is(ReturnType!((T t) => t.lookahead) == Token);
+
+class Lexer(R)
+	if (isInputRange!R && is(ReturnType!((R r) => r.front) : immutable dchar))
+{
+	private R source;
+	private immutable(dchar)[] char_lookahead;
+	ulong line_num = 1, index_num = 1;
+	this (R s) {
+		source = s;
+		token = nextToken(source, char_lookahead, line_num, index_num);
+	}
+
+	private Token token;
+	private Token token_ahead;
+	private bool looked_ahead = false;
+	Token front() @property {
+		return token;
+	}
+	void popFront() {
+		if (looked_ahead) {
+			token = token_ahead;
+		}
+		else token = nextToken(source, char_lookahead, line_num, index_num);
+		looked_ahead = false;
+	}
+	Token lookahead() @property {
+		if (looked_ahead) return token_ahead;
+		else return token;
+	}
+}
+
+static assert (isLexer!(Lexer!string));
 
 

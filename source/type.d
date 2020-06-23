@@ -1,0 +1,5 @@
+module type;
+
+class Type {
+	
+}

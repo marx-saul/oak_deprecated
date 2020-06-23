@@ -1,6 +1,6 @@
 module context.type;
 
-import context.defs, parser.defs, parser.lexer;
+//import context.defs, parser.defs, parser.lexer;
 /+
 Type node_to_type(Node node) {
     if (node is null) return null;
