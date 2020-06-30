@@ -1,7 +1,7 @@
 module parser;
 
-import message, lexer, ast.astbase;
-import std.algorithm, std.meta;
+import message, lexer, ast.astbase, ast.symbol;
+import std.algorithm, std.meta, std.conv;
 
 unittest {
 
@@ -10,7 +10,7 @@ unittest {
 final class Parser(AST, Lex)
 	if (isLexer!Lex)
 {
-
+	/* **** methods **** */
 	Lex lex;
 	this (Lex l) {
 		lex = l;
@@ -18,16 +18,17 @@ final class Parser(AST, Lex)
 	Token token() @property { return lex.front; }
 	Location loc()   @property { return lex.front.loc; }
 	void nextToken() { lex.popFront(); }
-
 	void check(TokenType tt, bool always_pop = true, string additional_msg = "") {
 		if (tt != token.type) {
-			error(tt.stringof ~ " expected, not '" ~ token.str ~ "' " ~ additional_msg);
+			error(tt.to!string ~ " expected, not '" ~ token.str ~ "' " ~ additional_msg);
 			if (always_pop) lex.popFront();
 		}
 		else lex.popFront();
 	}
 
-	/* ************************* Expression ************************* */
+	/* *************************************** *
+					 Expression
+	 * *************************************** */
 	private pure bool isFirstOfExpression(TokenType t) @property {
 		with (TokenType)
 		return t.among!(
@@ -304,26 +305,30 @@ final class Parser(AST, Lex)
 		auto e = compositionExpression();
 
 		with (TokenType)
-		while (token.type == lBrace) {
-			auto loc_tmp = loc;	// location of {
-			nextToken();	// get rid of {
+		while (token.type == indexing) {
+			auto loc_tmp = loc;	// location of ![
+			nextToken();	// get rid of ![
 			auto e2 = expression();
 			// { E2 .. E3 }
 			if (token.type == dotdot) {
 				nextToken();	// get rid of ..
 				auto e3 = expression();
-				check(rBrace);	// get rid of }
+				check(rBrack);	// get rid of ]
 				e = new AST.SliceExpression(loc_tmp, e, e2, e3);
 			}
-			// { E2_0 , E2_1 , ... , E2_n }
+			// ![ E2_0 , E2_1 , ... , E2_n ]
 			else {
 				AST.Expression[] es = [e2];
 				while (true) {
 					if (token.type == comma) {
 						nextToken();	// get rid of ,
 					}
-					if (token.type == rBrace) {
-						nextToken();	// get rid of }
+					if (token.type == rBrack) {
+						nextToken();	// get rid of ]
+						break;
+					}
+					if (token.type == end_of_file) {
+						error("EOF found when expecting the indexing ].");
 						break;
 					}
 					es ~= expression();
@@ -446,8 +451,6 @@ final class Parser(AST, Lex)
 				else if (c == '_') {}
 			}
 		}
-		import std.stdio;
-		writeln(token.str, " ", val);
 
 		auto e = new AST.IntegerExpression(loc, val);
 		nextToken();
@@ -467,22 +470,25 @@ final class Parser(AST, Lex)
 	}
 
 	AST.Expression identifierExpression() {
-		auto e = new AST.IdentifierExpression(loc, token.str);
+		auto e = new AST.IdentifierExpression(loc, new Identifier(token.str));
 		nextToken();
 		return e;
 	}
 	AST.Expression dollarExpression() {
-		auto e = new AST.DollarExpression(loc);
+		auto sym = new Identifier(token.str);
+		auto e = new AST.DollarExpression(loc, sym);
 		nextToken();
 		return e;
 	}
 	AST.Expression thisExpression() {
-		auto e = new AST.ThisExpression(loc);
+		auto sym = new Identifier(token.str);
+		auto e = new AST.ThisExpression(loc, sym);
 		nextToken();
 		return e;
 	}
 	AST.Expression superExpression() {
-		auto e = new AST.SuperExpression(loc);
+		auto sym = new Identifier(token.str);
+		auto e = new AST.SuperExpression(loc, sym);
 		nextToken();
 		return e;
 	}
@@ -496,9 +502,14 @@ final class Parser(AST, Lex)
 	AST.Expression tupleExpression() {
 		auto loc_tmp = loc;
 		nextToken();	// get rid of (
-		auto e1 = expression();
-		// ( E ) = E
 
+		// ()
+		if (token.type == TokenType.rPar) {
+			nextToken();	// get rid of )
+			return new AST.UnitExpression(loc_tmp);
+		}
+
+		auto e1 = expression();
 		AST.Expression[] es = [e1];
 		with (TokenType)
 		while (true) {
@@ -510,13 +521,281 @@ final class Parser(AST, Lex)
 				break;
 			}
 			if (token.type == end_of_file) {
-				error("EOF found in a tuple expression.");
+				error("EOF found in a tuple expression (a, b, ...)");
 				break;
 			}
 			es ~= expression();
 		}
 		if (es.length > 1) return new AST.TupleExpression(loc_tmp, es);
 		else return e1;
+	}
+
+	/* *************************************** *
+					   Type
+	 * *************************************** */
+	alias type = functionType;
+
+	AST.Type functionType() {
+		auto t = qualifiedType();
+		if (token.type == TokenType.right_arrow) {
+			auto loc_tmp = loc;
+			nextToken();	// get rid of ->
+			auto t2 = functionType();
+			t = new AST.FunctionType(loc_tmp, t, t2);
+		}
+		return t;
+	}
+
+	AST.Type qualifiedType() {
+		with (TokenType)
+		switch (token.type) {
+		case immut:
+			nextToken();
+			break;
+
+		case const_:
+			nextToken();
+			break;
+
+		case inout_:
+			nextToken();
+			break;
+
+		default:
+			break;
+		}
+		auto t = arrayType();
+		return t;
+	}
+
+	// array, associative array, pointer
+	AST.Type arrayType() {
+		with (TokenType)
+		if      (token.type == lBrack) {
+			AST.Type t;
+			auto loc_tmp = loc;
+			nextToken();	// get rid of [
+			auto k = type();
+			// associative array
+			if (token.type == colon) {
+				nextToken();	// get rid of :
+				auto v = type();
+				t = new AST.AssocArrayType(loc_tmp, k, v);
+			}
+			// array
+			else {
+				t = new AST.ArrayType(loc_tmp, k);
+			}
+			check(TokenType.rBrack);
+			return t;
+		}
+		else if (token.type == ref_of) {
+			auto loc_tmp = loc;
+			nextToken();	// get rid of #
+			auto t2 = qualifiedType();
+			return new AST.PointerType(loc_tmp, t2);
+		}
+		else return atomType();
+	}
+
+	AST.Type atomType() {
+		with (TokenType)
+		if      (token.type == lPar) {
+			return tupleType();
+		}
+		else if (token.type.among!(int_, real_, string_, bool_, void_, unit)) {
+			return primitiveType();
+		}
+		else if (token.type == identifier) {
+			return identifierType();
+		}
+		else {
+			error("Type expected. not " ~ token.str);
+			nextToken();
+			return null;
+		}
+	}
+
+	AST.Type tupleType() {
+		auto loc_tmp = loc;
+		nextToken();	// get rid of (
+
+		// ()
+		if (token.type == TokenType.rPar) {
+			nextToken();	// get rid of )
+			error("() is the literal of the type 'unit', not the type itself.");
+			return new AST.PrimitiveType(loc_tmp, TokenType.unit);
+		}
+
+		auto t1 = type();
+		AST.Type[] ts = [t1];
+		with (TokenType)
+		while (true) {
+			if (token.type == comma) {
+				nextToken();	// get rid of ,
+			}
+			if (token.type == rPar) {
+				nextToken();	// get rid of )
+				break;
+			}
+			if (token.type == end_of_file) {
+				error("EOF found in a tuple type.");
+				break;
+			}
+			ts ~= type();
+		}
+		if (ts.length > 1) return new AST.TupleType(loc_tmp, ts);
+		else return t1;
+	}
+
+	AST.PrimitiveType primitiveType() {
+		auto t = new AST.PrimitiveType(loc, token.type);
+		nextToken();
+		return t;
+	}
+
+	AST.IdentifierType identifierType() {
+		auto t = new AST.IdentifierType(loc, new Identifier(token.str));
+		nextToken();
+		return t;
+	}
+
+	/* *************************************** *
+					 Statement
+	 * *************************************** */
+	AST.Statement statement() {
+		with (TokenType)
+		if (isFirstOfExpression()) {
+			return expressionStatement();
+		}
+		with (TokenType)
+		switch (token.type) {
+			case lBrace:           return blockStatement();
+			case if_:              return ifElseStatement();
+			case while_:           return whileStatement();
+			case for_:             return forStatement();
+        	case foreach_:         return foreachStatement();
+        	case foreach_reverse_: return foreachReverseStatement();
+        	case break_:           return breakStatement();
+        	case continue_:        return continueStatement();
+        	case return_:          return returnStatement();
+			default:
+				error("A statement expected, not " ~ token.str);
+				return null;
+		}
+	}
+
+	AST.ExpressionStatement expressionStatement() {
+		auto loc_tmp = loc;
+		auto e = expression();
+		check(TokenType.semicolon);
+		return new AST.ExpressionStatement(loc_tmp, e);
+	}
+
+	AST.BlockStatement blockStatement() {
+		auto loc_tmp = loc;
+		nextToken();	// get rid of {
+		AST.Statement[] ss;
+		with (TokenType)
+		while (token.type != rBrace) {
+			ss ~= statement();
+			if (token.type == end_of_file) {
+				error("Reached EOF when } was expected.");
+				break;
+			}
+		}
+		return new AST.BlockStatement(loc_tmp, ss);
+	}
+
+	AST.IfElseStatement ifElseStatement() {
+		auto loc_tmp = loc;
+		nextToken();	// get rid of if
+		auto cond = expression();
+		auto if_block = statement();
+		if (token.type == TokenType.else_) {
+			nextToken();	// get rid of else
+			auto else_block = statement();
+			return new AST.IfElseStatement(loc_tmp, cond, if_block, else_block);
+		}
+		else {
+			return new AST.IfElseStatement(loc_tmp, cond, if_block, null);
+		}
+	}
+
+	AST.WhileStatement whileStatement() {
+		auto loc_tmp = loc;
+		nextToken();	// get rid of while
+		auto cond = expression();
+		auto body = statement();
+		return new AST.WhileStatement(loc_tmp, cond, body);
+	}
+
+	AST.DoWhileStatement doWhileStatement() {
+		auto loc_tmp = loc;
+		nextToken();	// get rid of do
+		auto body = statement();
+		check(TokenType.while_);
+		auto cond = expression();
+		check(TokenType.semicolon);
+		return new AST.DoWhileStatement(loc_tmp, body, cond);
+	}
+
+	AST.ForStatement forStatement() {
+		auto loc_tmp = loc;
+		nextToken();	// get rid of for
+		auto init = statement();
+		auto cond = expression();
+		check(TokenType.semicolon);
+		auto exec = expression();
+		auto body = statement();
+		return new AST.ForStatement(loc_tmp, init, cond, exec, body);
+	}
+
+	AST.ForeachStatement foreachStatement() {
+		//auto loc_tmp = loc;
+		//nextToken();	// get rid of foreach
+		return null;
+	}
+
+	AST.ForeachReverseStatement foreachReverseStatement() {
+		//auto loc_tmp = loc;
+		//nextToken();	// get rid of foreach
+		return null;
+	}
+
+	AST.BreakStatement breakStatement() {
+		auto loc_tmp = loc;
+		nextToken();	// get rid of break
+		Identifier label;
+		if (token.type == TokenType.identifier) {
+			label = new Identifier(token.str);
+			nextToken();	// get rid of label
+		}
+		check(TokenType.semicolon);
+		return new AST.BreakStatement(loc_tmp, label);
+	}
+
+	AST.ContinueStatement continueStatement() {
+		auto loc_tmp = loc;
+		nextToken();	// get rid of continue
+		Identifier label;
+		if (token.type == TokenType.identifier) {
+			label = new Identifier(token.str);
+			nextToken();	// get rid of label
+		}
+		check(TokenType.semicolon);
+		return new AST.ContinueStatement(loc_tmp, label);
+	}
+
+	AST.ReturnStatement returnStatement() {
+		auto loc_tmp = loc;
+		nextToken();	// get rid of continue
+		AST.Expression expr;
+		if (isFirstOfExpression()) {
+			expr = expression();
+		}
+		check(TokenType.semicolon);
+		return new AST.ReturnStatement(loc_tmp, expr);
 	}
 
 }

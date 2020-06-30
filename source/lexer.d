@@ -74,6 +74,7 @@ enum TokenType {
 	string_,
 	bool_,
 	void_,
+	unit,
 
 	struct_,
 	class_,
@@ -82,13 +83,17 @@ enum TokenType {
 	immut,
 	const_,
 	inout_,
+
+	shadow,
 	ref_,
 
 	private_,
 	protected_,
 	package_,
 	public_,
+	export_,
 	abstract_,
+	override_,
 
 	pure_,
 	lazy_,
@@ -97,7 +102,6 @@ enum TokenType {
 	module_,
 	let,
 	func,
-	shadow,
 
 	any,
 	this_,
@@ -105,16 +109,20 @@ enum TokenType {
 
 	if_,
 	else_,
+	do_,
 	while_,
+	for_,
 	foreach_,
 	foreach_reverse_,
+	break_,
+	continue_,
 	return_,
 
 	// binary(unary) operator (precedence order)
 	param_expr,	param_type,				// :. ::
 	dot,								// .
 	composition,						// @
-	dotdot,								// indexing, slicing { } { .. }
+	indexing, dotdot,					// indexing, slicing ![ ] ![ .. ]
 	apply, 								// function application f x
 	pow,								// ^^
 	//unary
@@ -192,6 +200,7 @@ static const reserved_words = new TokenDict(
 	tuple("string",          TokenType.string_),
 	tuple("bool",            TokenType.bool_),
 	tuple("void",            TokenType.void_),
+	tuple("unit",            TokenType.unit),
 
 	tuple("struct",          TokenType.struct_),
 	tuple("class",           TokenType.class_),
@@ -206,12 +215,17 @@ static const reserved_words = new TokenDict(
 	tuple("immut",           TokenType.immut),
 	tuple("const",           TokenType.const_),
 	tuple("inout",           TokenType.inout_),
+
+	tuple("shadow",          TokenType.shadow),
 	tuple("ref",             TokenType.ref_),
 
 	tuple("private",         TokenType.private_),
 	tuple("protected",       TokenType.protected_),
 	tuple("package",         TokenType.package_),
 	tuple("public",          TokenType.public_),
+	tuple("export",          TokenType.export_),
+	tuple("abstract",        TokenType.abstract_),
+	tuple("override",        TokenType.override_),
 
 	tuple("any",             TokenType.any),
 	tuple("this",            TokenType.this_),
@@ -219,9 +233,14 @@ static const reserved_words = new TokenDict(
 
 	tuple("if",              TokenType.if_),
 	tuple("else",            TokenType.else_),
+	tuple("do",              TokenType.do_),
 	tuple("while",           TokenType.while_),
+	tuple("for",             TokenType.for_),
 	tuple("foreach",         TokenType.foreach_),
 	tuple("foreach_reverse", TokenType.foreach_reverse_),
+	tuple("break",           TokenType.break_),
+	tuple("continue",        TokenType.continue_),
+	tuple("return",          TokenType.return_),
 
 	tuple("app",             TokenType.app),
 	tuple("in",              TokenType.in_),
@@ -270,12 +289,13 @@ static const reserved_symbols = new AATree!(dchar, (a,b) => a<b, SE[])(
 	tuple(cast(dchar) '|', [SE("|",   TokenType.bit_or),
 							SE("|>",  TokenType.pipeline),
 							SE("|=",  TokenType.or_assign)]),
-	tuple(cast(dchar) '!', [SE("!",   TokenType.ref_of),
+	tuple(cast(dchar) '!', [SE("!",   TokenType.deref),
+							SE("![",  TokenType.indexing),
 							SE("!=",  TokenType.neq),
 							SE("!in", TokenType.nin),
 							SE("!is", TokenType.nis),]),
 	//tuple(cast(dchar) '?', [SE("?",   TokenType.ref_of)]),
-	tuple(cast(dchar) '#', [SE("#",   TokenType.deref)]),
+	tuple(cast(dchar) '#', [SE("#",   TokenType.ref_of)]),
 	tuple(cast(dchar) '$', [SE("$",   TokenType.dollar)]),
 	tuple(cast(dchar) ',', [SE(",",   TokenType.comma)]),
 	tuple(cast(dchar) '\\',[SE("\\",  TokenType.lambda)]),
