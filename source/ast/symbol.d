@@ -1,7 +1,8 @@
 module ast.symbol;
 
-import lexer, type;
+import lexer, type, attribute;
 
+// a.b.c is ["c", "b", "a"]
 class Identifier {
     string[] name;
     this (string[] n) {
@@ -12,15 +13,3 @@ class Identifier {
     }
 }
 
-// identifier : Type
-class TypedIdentifier : Identifier {
-    Type type;
-    this (string[] n, Type t = null) {
-        super(n);
-        type = t;
-    }
-    this (string n, Type t = null) {
-        super(n);
-        type = t;
-    }
-}

@@ -5,27 +5,16 @@ module ast.astbase;
 import std.algorithm, std.array;
 
 struct ASTBase {
-    import ast.astnode, ast.symbol;
+    import ast.astnode, ast.symbol, attribute;
     import lexer;
     import visitor;
 
-    enum Attrbute : ulong {
-        dummy      = 0UL,
-
-        shadow     = 1UL << 0,
-        ref_       = 1UL << 1,
-
-        private_   = 1UL << 2,
-        protected_ = 1UL << 3,
-        package_   = 1UL << 4,
-        public_    = 1UL << 5,
-        export_    = 1UL << 6,
-        abstract_  = 1UL << 7,
-        override_  = 1UL << 8,
-    }
-
     alias Vis = Visitor!ASTBase;
     abstract class ASTNode {
+        // shallow copy
+        abstract @property ASTNode dup()  { return this; }
+        // deep copy
+        abstract @property ASTNode copy() { return this; }
         abstract void accept(Vis v);
     }
 
@@ -38,11 +27,11 @@ struct ASTBase {
         this (Location l) {
             loc = l;
         }
-        // shallow copy
-        abstract @property Expression dup();
-        // deep copy
-        abstract @property Expression copy();
 
+        // shallow copy
+        override @property Expression dup()  { return this; }
+        // deep copy
+        override @property Expression copy() { return this; }
         override void accept(Vis v) { v.visit(this); }
     }
 
@@ -277,36 +266,309 @@ struct ASTBase {
         override void accept(Vis v) { v.visit(this); }
     }
 
-    /*
-    class StructLiteral : Expression {
-        Identifier[] identifiers;
+    final class ArrayExpression : Expression {
         Expression[] exprs;
 
-        this (Token t, Identifier[] ids, Expression[] es) {
-            super(t);
-            identifiers = ids;
-            exprs = es
+        this (Location loc, Expression[] es) {
+            super(loc);
+            exprs = es;
         }
+        override @property ArrayExpression dup() {
+            return new ArrayExpression(loc, exprs);
+        }
+        override @property ArrayExpression copy() {
+            auto es = new Expression[exprs.length];
+            foreach (i, expr; exprs) { es[i] = expr.copy; }
+            return new ArrayExpression(loc, es);
+        }
+        override void accept(Vis v) { v.visit(this); }
+    }
+
+    final class AssocArrayExpression : Expression {
+        Expression[] keys;
+        Expression[] values;
+
+        this (Location loc, Expression[] ks, Expression[] vs) {
+            super(loc);
+            keys = ks;
+            values = vs;
+        }
+        override @property AssocArrayExpression dup() {
+            return new AssocArrayExpression(loc, keys, values);
+        }
+        override @property AssocArrayExpression copy() {
+            auto ks = new Expression[keys.length];
+            auto vs = new Expression[values.length];
+            foreach (i, key;   keys) { ks[i] = key.copy; }
+            foreach (i, value; keys) { vs[i] = value.copy; }
+            return new AssocArrayExpression(loc, ks, vs);
+        }
+        override void accept(Vis v) { v.visit(this); }
+    }
+
+    final class StructExpression : Expression {
+        Type type;
+        string[] members;
+        Expression[] exprs;
+
+        this (Location loc, Type t, string[] ms, Expression[] es) {
+            super(loc);
+            type = t;
+            members = ms;
+            exprs = es;
+        }
+        override @property StructExpression dup() {
+            return new StructExpression(loc, type, members, exprs);
+        }
+        override @property StructExpression copy() {
+            auto es = new Expression[exprs.length];
+            foreach (i, expr; exprs) { es[i] = expr.copy; }
+            return new StructExpression(loc, type.copy, members.dup, es);
+        }
+        override void accept(Vis v) { v.visit(this); }
+    }
+    /*
+    final class LambdaLiteral : Expression {
+
     }
     */
-    /*
-    class LambdaLiteral : Expression {
+
+    final class IfElseExpression : Expression {
+        Expression cond;
+        Expression if_body;
+        Expression else_body;
+        this (Location l, Expression c, Expression i, Expression e) {
+            super(l);
+            cond = c;
+            if_body = i;
+            else_body = e;
+        }
+
+        override @property IfElseExpression dup() {
+            return new IfElseExpression(loc, cond, if_body, else_body);
+        }
+        override @property IfElseExpression copy() {
+            return new IfElseExpression(loc, cond.copy, if_body.copy, else_body.copy);
+        }
+
+        override void accept(Vis v) { v.visit(this); }
     }
-    (/
+
+    final class BlockExpression : Expression {
+        ASTNode[] nodes; // ; separated expressions, delcarations, etc...
+        this (Location l, ASTNode[] ns) {
+            super(l);
+            nodes = ns;
+        }
+
+        override @property BlockExpression dup() {
+            return new BlockExpression(loc, nodes);
+        }
+        override @property BlockExpression copy() {
+            auto ns = new ASTNode[nodes.length];
+            foreach (i, n; nodes) { ns[i] = n.copy; }
+            return new BlockExpression(loc, ns);
+        }
+
+        override void accept(Vis v) { v.visit(this); }
+    }
+
+    /* *************************************** *
+                       Statement
+     * *************************************** */
+    // Statement is an expression that will not terminate or will always evaluated to ().
+    enum Stmt {
+        error,
+
+        do_,
+        while_,
+        for_,
+        foreach_,
+        foreach_reverse_,
+        break_,
+        continue_,
+        return_,
+    }
+
+    abstract class Statement : Expression {
+        Stmt stmt;
+        this (Location l, Stmt s) {
+            super(l);
+            stmt = s;
+        }
+
+        override void accept(Vis v) { v.visit(this); }
+    }
+
+    final class WhileStatement : Statement {
+        Expression cond;
+        Expression body;
+        this (Location l, Expression c, Expression b) {
+            super(l, Stmt.while_);
+            cond = c;
+            body = b;
+        }
+
+        override @property WhileStatement dup() {
+            return new WhileStatement(loc, cond, body);
+        }
+        override @property WhileStatement copy() {
+            return new WhileStatement(loc, cond, body.copy);
+        }
+
+        override void accept(Vis v) { v.visit(this); }
+    }
+
+    final class DoWhileStatement : Statement {
+        Expression body;
+        Expression cond;
+        this (Location l, Expression b, Expression c) {
+            super(l, Stmt.do_);
+            body = b;
+            cond = c;
+        }
+
+        override @property DoWhileStatement dup() {
+            return new DoWhileStatement(loc, body, cond);
+        }
+        override @property DoWhileStatement copy() {
+            return new DoWhileStatement(loc, body.copy, cond.copy);
+        }
+
+        override void accept(Vis v) { v.visit(this); }
+    }
+
+    final class ForStatement : Statement {
+        Expression init;
+        Expression cond;
+        Expression exec;
+        Expression body;
+        this (Location l, Expression i, Expression c, Expression e, Expression b) {
+            super(l, Stmt.for_);
+            init = i;
+            cond = c;
+            exec = e;
+            body = b;
+        }
+
+        override @property ForStatement dup() {
+            return new ForStatement(loc, init, cond, exec, body);
+        }
+        override @property ForStatement copy() {
+            return new ForStatement(loc, init.copy, cond.copy, exec.copy, body.copy);
+        }
+
+        override void accept(Vis v) { v.visit(this); }
+    }
+
+    final class ForeachStatement : Statement {
+        TypedIdentifier[] t_ids;
+        Expression expr;
+        Expression body;
+        this (Location l, TypedIdentifier[] t, Expression e, Expression b) {
+            super(l, Stmt.foreach_);
+            t_ids = t;
+            expr = e;
+            body = b;
+        }
+
+        override @property ForeachStatement dup() {
+            return new ForeachStatement(loc, t_ids, expr, body);
+        }
+        override @property ForeachStatement copy() {
+            return new ForeachStatement(loc, t_ids, expr.copy, body.copy);
+        }
+
+        override void accept(Vis v) { v.visit(this); }
+    }
+
+    final class ForeachReverseStatement : Statement {
+        TypedIdentifier[] t_ids;
+        Expression expr;
+        Expression body;
+        this (Location l, TypedIdentifier[] t, Expression e, Expression b) {
+            super(l, Stmt.foreach_reverse_);
+            t_ids = t;
+            expr = e;
+            body = b;
+        }
+
+        override @property ForeachReverseStatement dup() {
+            return new ForeachReverseStatement(loc, t_ids, expr, body);
+        }
+        override @property ForeachReverseStatement copy() {
+            return new ForeachReverseStatement(loc, t_ids, expr.copy, body.copy);
+        }
+
+        override void accept(Vis v) { v.visit(this); }
+    }
+
+    final class BreakStatement : Statement {
+        Identifier label;
+        this (Location l, Identifier lbl) {
+            super(l, Stmt.break_);
+            label = lbl;
+        }
+
+        override @property BreakStatement dup() {
+            return new BreakStatement(loc, label);
+        }
+        override @property BreakStatement copy() {
+            return new BreakStatement(loc, label);
+        }
+
+        override void accept(Vis v) { v.visit(this); }
+    }
+
+    final class ContinueStatement : Statement {
+        Identifier label;
+        this (Location l, Identifier lbl) {
+            super(l, Stmt.continue_);
+            label = lbl;
+        }
+
+        override @property ContinueStatement dup() {
+            return new ContinueStatement(loc, label);
+        }
+        override @property ContinueStatement copy() {
+            return new ContinueStatement(loc, label);
+        }
+
+        override void accept(Vis v) { v.visit(this); }
+    }
+
+    final class ReturnStatement : Statement {
+        Expression expr;
+        this (Location l, Expression e) {
+            super(l, Stmt.return_);
+            expr = e;
+        }
+
+        override @property ReturnStatement dup() {
+            return new ReturnStatement(loc, expr);
+        }
+        override @property ReturnStatement copy() {
+            return new ReturnStatement(loc, expr.copy);
+        }
+
+        override void accept(Vis v) { v.visit(this); }
+    }
+
     /* *************************************** *
                        Type
      * *************************************** */
     abstract class Type : ASTNode {
         Location loc;
+        Attribute attr;
 
-        this (Location l) {
+        this (Location l, Attribute aatr = Attribute.none) {
             loc = l;
         }
-        // shallow copy
-        abstract @property Type dup();
-        // deep copy
-        abstract @property Type copy();
 
+        // shallow copy
+        override @property Type dup()  { return this; }
+        // deep copy
+        override @property Type copy() { return this; }
         override void accept(Vis v) { v.visit(this); }
     }
 
@@ -396,7 +658,7 @@ struct ASTBase {
         override void accept(Vis v) { v.visit(this); }
     }
 
-    // int, real, bool, ...
+    // user defined type
     final class IdentifierType : Type {
         Identifier id;
         this (Location l, Identifier i) {
@@ -429,250 +691,70 @@ struct ASTBase {
     }
 
     /* *************************************** *
-                       Statement
+                    Declaration
      * *************************************** */
-    enum Stmt {
-        error,
-
-        block,
-
-        expression,
-
-        if_,
-        do_,
-        while_,
-        for_,
-        foreach_,
-        foreach_reverse_,
-        break_,
-        continue_,
-        return_,
-    }
-
-    abstract class Statement : ASTNode {
+    final class LetDeclaration : ASTNode {
         Location loc;
-        Stmt stmt;
-        this (Location l, Stmt s) {
+        TypedIdentifier[] ids;
+        Expression[] exprs;
+
+        this (Location l, TypedIdentifier[] i_s, Expression[] es) {
             loc = l;
-            stmt = s;
-        }
-        // shallow copy
-        abstract @property Statement dup();
-        // deep copy
-        abstract @property Statement copy();
-
-        override void accept(Vis v) { v.visit(this); }
-    }
-
-    final class ExpressionStatement : Statement {
-        Expression expr;
-        this (Location l, Expression e) {
-            super(l, Stmt.expression);
-            expr = e;
+            ids = i_s;
+            exprs = es;
         }
 
-        override @property ExpressionStatement dup() {
-            return new ExpressionStatement(loc, expr);
+        override @property LetDeclaration dup() {
+            return new LetDeclaration(loc, ids, exprs);
         }
-        override @property ExpressionStatement copy() {
-            return new ExpressionStatement(loc, expr.copy);
+        override @property LetDeclaration copy() {
+            auto es = new Expression[exprs.length];
+            foreach (i, e; exprs) { es[i] = e; }
+            return new LetDeclaration(loc, ids, es);
         }
 
         override void accept(Vis v) { v.visit(this); }
     }
 
-    final class BlockStatement : Statement {
-        Statement[] stmts;
-        this (Location l, Statement[] ss) {
-            super(l, Stmt.block);
-            stmts = ss;
-        }
+    final class FunctionDeclaration : ASTNode {
+        Location loc;
+        Attribute attr;
+        TypedIdentifier id;
+        TypedIdentifier[] args;
+        Expression body;
 
-        override @property BlockStatement dup() {
-            return new BlockStatement(loc, stmts);
-        }
-        override @property BlockStatement copy() {
-            auto ss = new Statement[stmts.length];
-            foreach (i, s; ss) { ss[i] = s.copy; }
-            return new BlockStatement(loc, ss);
-        }
-
-        override void accept(Vis v) { v.visit(this); }
-    }
-
-    final class IfElseStatement : Statement {
-        Expression cond;
-        Statement if_body;
-        Statement else_body;
-        this (Location l, Expression c, Statement i, Statement e) {
-            super(l, Stmt.if_);
-            cond = c;
-            if_body = i;
-            else_body = e;
-        }
-
-        override @property IfElseStatement dup() {
-            return new IfElseStatement(loc, cond, if_body, else_body);
-        }
-        override @property IfElseStatement copy() {
-            return new IfElseStatement(loc, cond.copy, if_body.copy, else_body.copy);
-        }
-
-        override void accept(Vis v) { v.visit(this); }
-    }
-
-    final class WhileStatement : Statement {
-        Expression cond;
-        Statement body;
-        this (Location l, Expression c, Statement b) {
-            super(l, Stmt.if_);
-            cond = c;
+        this (Location l, Attribute attr, TypedIdentifier i, TypedIdentifier[] as, Expression b) {
+            loc = l;
+            id = i;
+            args = as;
             body = b;
         }
 
-        override @property WhileStatement dup() {
-            return new WhileStatement(loc, cond, body);
+        override @property FunctionDeclaration dup() {
+            return new FunctionDeclaration(loc, attr, id, args, body);
         }
-        override @property WhileStatement copy() {
-            return new WhileStatement(loc, cond, body.copy);
-        }
-
-        override void accept(Vis v) { v.visit(this); }
-    }
-
-    final class DoWhileStatement : Statement {
-        Statement body;
-        Expression cond;
-        this (Location l, Statement b, Expression c) {
-            super(l, Stmt.if_);
-            body = b;
-            cond = c;
-        }
-
-        override @property DoWhileStatement dup() {
-            return new DoWhileStatement(loc, body, cond);
-        }
-        override @property DoWhileStatement copy() {
-            return new DoWhileStatement(loc, body.copy, cond.copy);
+        override @property FunctionDeclaration copy() {
+            return new FunctionDeclaration(loc, attr, id, args, body.copy);
         }
 
         override void accept(Vis v) { v.visit(this); }
     }
 
-    final class ForStatement : Statement {
-        Statement init;
-        Expression cond;
-        Expression exec;
-        Statement body;
-        this (Location l, Statement i, Expression c, Expression e, Statement b) {
-            super(l, Stmt.for_);
-            init = i;
-            cond = c;
-            exec = e;
-            body = b;
+    /* ************************************ *
+                      Tools
+     * ************************************ */
+    // identifier : Type
+    class TypedIdentifier : Identifier {
+        Attribute attr;
+        Type type;
+        this (string[] n, Attribute attr, Type t) {
+            super(n);
+            type = t;
         }
-
-        override @property ForStatement dup() {
-            return new ForStatement(loc, init, cond, exec, body);
+        this (string n, Attribute attr, Type t) {
+            super(n);
+            type = t;
         }
-        override @property ForStatement copy() {
-            return new ForStatement(loc, init.copy, cond.copy, exec.copy, body.copy);
-        }
-
-        override void accept(Vis v) { v.visit(this); }
-    }
-
-    final class ForeachStatement : Statement {
-        TypedIdentifier[] t_ids;
-        Expression expr;
-        Statement body;
-        this (Location l, TypedIdentifier[] t, Expression e, Statement b) {
-            super(l, Stmt.foreach_);
-            t_ids = t;
-            expr = e;
-            body = b;
-        }
-
-        override @property ForeachStatement dup() {
-            return new ForeachStatement(loc, t_ids, expr, body);
-        }
-        override @property ForeachStatement copy() {
-            return new ForeachStatement(loc, t_ids, expr.copy, body.copy);
-        }
-
-        override void accept(Vis v) { v.visit(this); }
-    }
-
-    final class ForeachReverseStatement : Statement {
-        TypedIdentifier[] t_ids;
-        Expression expr;
-        Statement body;
-        this (Location l, TypedIdentifier[] t, Expression e, Statement b) {
-            super(l, Stmt.foreach_reverse_);
-            t_ids = t;
-            expr = e;
-            body = b;
-        }
-
-        override @property ForeachReverseStatement dup() {
-            return new ForeachReverseStatement(loc, t_ids, expr, body);
-        }
-        override @property ForeachReverseStatement copy() {
-            return new ForeachReverseStatement(loc, t_ids, expr.copy, body.copy);
-        }
-
-        override void accept(Vis v) { v.visit(this); }
-    }
-
-    final class BreakStatement : Statement {
-        Identifier label;
-        this (Location l, Identifier lbl) {
-            super(l, Stmt.break_);
-            label = lbl;
-        }
-
-        override @property BreakStatement dup() {
-            return new BreakStatement(loc, label);
-        }
-        override @property BreakStatement copy() {
-            return new BreakStatement(loc, label);
-        }
-
-        override void accept(Vis v) { v.visit(this); }
-    }
-
-    final class ContinueStatement : Statement {
-        Identifier label;
-        this (Location l, Identifier lbl) {
-            super(l, Stmt.continue_);
-            label = lbl;
-        }
-
-        override @property ContinueStatement dup() {
-            return new ContinueStatement(loc, label);
-        }
-        override @property ContinueStatement copy() {
-            return new ContinueStatement(loc, label);
-        }
-
-        override void accept(Vis v) { v.visit(this); }
-    }
-
-    final class ReturnStatement : Statement {
-        Expression expr;
-        this (Location l, Expression e) {
-            super(l, Stmt.return_);
-            expr = e;
-        }
-
-        override @property ReturnStatement dup() {
-            return new ReturnStatement(loc, expr);
-        }
-        override @property ReturnStatement copy() {
-            return new ReturnStatement(loc, expr.copy);
-        }
-
-        override void accept(Vis v) { v.visit(this); }
     }
 
 }

@@ -8,10 +8,45 @@ unittest {
     import parser, lexer, ast.astbase;
     // show expression
     {
-        auto lx  = new Lexer!string("f n * (n-1)");
+        auto lx  = new Lexer!string("(f n * (n-1), struct(Vector2){x:a![3], y:--a![0]}, [\"hello\" : 3+2], [], [#a])");
         auto ps = new Parser!(ASTBase, Lexer!string)(lx);
         auto expr = ps.expression();
-        auto v = new ExpressionVisitor();
+        auto v = new ToStringVisitor();
+        expr.accept(v);
+        writeln(v.str);
+    }
+
+    // show expression
+    {
+        auto lx  = new Lexer!string(`{
+            let:int a = 0;
+            while a <= 10 : {
+                writeln a;
+                writeln if a % 2 == 0 : "even" else "odd"
+                a.inc;
+            };
+            let a:int = 0, msg = "message!";
+            for a = 0 ; a <= 0 ; a.inc : {
+                writeln if a % 2 == 0 : "even" else "odd"
+            };
+
+            func factorial:int n:int = if n>0 : n * factorial(n-1) else 1;
+            func fibonacci:int n:int = {
+                let i = 1, j = 1,;
+                while n > 0 : {
+                    let t = i+j;
+                    i = j;
+                    j = t;
+                    n.dec;
+                };
+                i
+            };
+
+            writeln app fibonacci app factorial 5
+        }`);
+        auto ps = new Parser!(ASTBase, Lexer!string)(lx);
+        auto v = new ToStringVisitor();
+        auto expr = ps.expression();
         expr.accept(v);
         writeln(v.str);
     }
@@ -21,61 +56,24 @@ unittest {
         auto lx  = new Lexer!string("(a -> b) -> [a] -> [b]");
         auto ps = new Parser!(ASTBase, Lexer!string)(lx);
         auto type = ps.type();
-        auto v = new TypeVisitor();
+        auto v = new ToStringVisitor();
         type.accept(v);
         writeln(v.str);
     }
 
-    // show statement
-    {
-        auto lx  = new Lexer!string(`{
-            a = 0;
-            while a <= 10 {
-                writeln a;
-                a.inc;
-            }
-            for a = 0 ; a <= 0 ; a.inc {
-                if a % 2 == 0 { writeln "even" }
-                else writeln "odd"
-            }
-        }`);
-        auto ps = new Parser!(ASTBase, Lexer!string)(lx);
-        auto st = ps.statement();
-        auto v = new StatementVisitor();
-        st.accept(v);
-        writeln(v.str);
-    }
-
-}
-
-@property string tostring(ASTBase.Expression e) {
-    if (!e) return "";
-    auto v = new ExpressionVisitor();
-    e.accept(v);
-    return v.str;
-}
-@property string tostring(ASTBase.Type t) {
-    if (!t) return "";
-    auto v = new TypeVisitor();
-    t.accept(v);
-    return v.str;
-}
-@property string tostring(ASTBase.Statement s) {
-    if (!s) return "";
-    auto v = new StatementVisitor();
-    s.accept(v);
-    return v.str;
 }
 
 import visitor, ast.astbase, ast.astnode;
-class ExpressionVisitor : PermissiveVisitor!ASTBase {
+class ToStringVisitor : PermissiveVisitor!ASTBase {
     alias AST = ASTBase;
 
+    size_t depth;
     string str = "";
     void add(string[] ss...) {
         foreach (s; ss) str ~= s;
     }
 
+    // Expression
     override void visit(AST.ASTNode)              { assert(0); }
     override void visit(AST.Expression)           { assert(0); }
     override void visit(AST.BinaryExpression e) {
@@ -86,7 +84,7 @@ class ExpressionVisitor : PermissiveVisitor!ASTBase {
         add(")");
     }
     override void visit(AST.UnaryExpression e) {
-        write(e.op);
+        add(e.op.to!string);
         if (e.expr) e.expr.accept(this);
     }
     override void visit(AST.WhenExpression e) {
@@ -104,17 +102,19 @@ class ExpressionVisitor : PermissiveVisitor!ASTBase {
             if (expr) expr.accept(this);
             add(", ");
         }
-        add("\b\b)");
+        str = str[0..$-2];
+        add(")");
     }
     override void visit(AST.IndexExpression e) {
         add("(");
         if (e.expr)   e.expr.accept(this);
-        add("{");
+        add("![");
         foreach (expr; e.indices) {
             if (expr) expr.accept(this);
             add(", ");
         }
-        add("\b\b})");
+        str = str[0..$-2];
+        add("])");
     }
     override void visit(AST.SliceExpression e) {
         add("(");
@@ -143,22 +143,107 @@ class ExpressionVisitor : PermissiveVisitor!ASTBase {
     override void visit(AST.ThisExpression e)   { visit(cast(AST.IdentifierExpression)e); }
     override void visit(AST.SuperExpression e)  { visit(cast(AST.IdentifierExpression)e); }
     override void visit(AST.UnitExpression e)   { add("()"); }
+    override void visit(AST.ArrayExpression e) {
+        add("[");
+        foreach (expr; e.exprs) {
+            if (expr) expr.accept(this);
+            add(", ");
+        }
+        str = str[0..$-2];
+        add("]");
+    }
+    override void visit(AST.AssocArrayExpression e) {
+        add("[");
+        foreach (i; 0 .. e.keys.length) {
+            if (e.keys[i])   e  .keys[i].accept(this);
+            add(":");
+            if (e.values[i]) e.values[i].accept(this);
+            add(", ");
+        }
+        str = str[0..$-2];
+        add("]");
+    }
+    override void visit(AST.StructExpression e) {
+        add("struct (");
+        if (e.type) e.type.accept(this);
+        add(") {");
+        foreach (i; 0 .. e.exprs.length) {
+            add(e.members[i], ":");
+            if (e.exprs[i]) e.exprs[i].accept(this);
+            add(", ");
+        }
+        str = str[0..$-2];
+        add("}");
+    }
+    override void visit(AST.BlockExpression s) {
 
-    // others
-    alias visit = typeof(super).visit;
-}
+        //foreach (i; 0 .. depth) str ~= "    ";
+        add("{\n");
+        ++depth;
 
-class TypeVisitor : PermissiveVisitor!ASTBase {
-    alias AST = ASTBase;
+        foreach (n; s.nodes[0..$-1]) {
+            foreach (i; 0 .. depth) str ~= "    ";
+            if (n) n.accept(this);
+            add(";\n");
+        }
+        foreach (i; 0 .. depth) str ~= "    ";
+        if (s.nodes[$-1]) s.nodes[$-1].accept(this);
+        add("\n");
 
-    string str = "";
-    void add(string[] ss...) {
-        foreach (s; ss) str ~= s;
+        --depth;
+        foreach (i; 0 .. depth) str ~= "    ";
+        add("}");
+    }
+    override void visit(AST.IfElseExpression s) {
+        add("if ");
+        if (s.cond) s.cond.accept(this);
+        add(" then ");
+        if (s.if_body) s.if_body.accept(this);
+        if (s.else_body) {
+            add(" else ");
+            s.else_body.accept(this);
+        }
+    }
+    // Statement
+    override void visit(AST.WhileStatement s) {
+        add("while ");
+        if (s.cond) s.cond.accept(this);
+        add(" then ");
+        if (s.body) s.body.accept(this);
+    }
+    override void visit(AST.DoWhileStatement s) {
+        add("do ");
+        if (s.body) s.body.accept(this);
+        add("while ");
+        if (s.cond) s.cond.accept(this);
+        add(";");
+    }
+    override void visit(AST.ForStatement s) {
+        add("for ");
+        if (s.init) s.init.accept(this);
+        add("; ");
+        if (s.cond) s.cond.accept(this);
+        add("; ");
+        if (s.exec) s.exec.accept(this);
+        add(": ");
+        if (s.body) s.body.accept(this);
+    }
+    override void visit(AST.ForeachStatement s) { }
+    override void visit(AST.ForeachReverseStatement s) { }
+    override void visit(AST.BreakStatement s) {
+        add("break");
+        if (s.label) add(" ", s.label.name[0], ";");
+    }
+    override void visit(AST.ContinueStatement s) {
+        add("continue");
+        if (s.label) add(" ", s.label.name[0], ";");
+    }
+    override void visit(AST.ReturnStatement s) {
+        add("return");
+        if (s.expr) s.expr.accept(this);
     }
 
-    override void visit(AST.ASTNode) { assert(0); }
-    override void visit(AST.Type)    { assert(0); }
-
+    // Type
     override void visit(AST.FunctionType t) {
         add("(");
         if (t.range)  t.range. accept(this);
@@ -189,7 +274,8 @@ class TypeVisitor : PermissiveVisitor!ASTBase {
             if (type) type.accept(this);
             add(", ");
         }
-        add("\b\b)");
+        str = str[0..$-2];
+        add(")");
     }
     override void visit(AST.IdentifierType t) {
         add(t.id.name[0]);
@@ -198,82 +284,31 @@ class TypeVisitor : PermissiveVisitor!ASTBase {
         add(t.tt.to!string);
     }
 
-    // others
-    alias visit = typeof(super).visit;
-}
-
-class StatementVisitor : PermissiveVisitor!ASTBase {
-    alias AST = ASTBase;
-
-    size_t depth;
-    string str;
-    void add(string[] ss...) {
-        foreach (s; ss) str ~= s;
-    }
-
-    override void visit(AST.ASTNode)   { assert(0); }
-    override void visit(AST.Statement) { assert(0); }
-
-
-    override void visit(AST.ExpressionStatement s) {
-        add(s.expr.tostring, ";");
-    }
-    override void visit(AST.BlockStatement s) {
-
-        foreach (i; 0 .. depth) str ~= "    ";
-        add("{\n");
-        ++depth;
-
-        foreach (stmt; s.stmts) {
-            foreach (i; 0 .. depth) str ~= "    ";
-            stmt.accept(this);
-            add("\n");
+    // Declaration
+    override void visit(AST.LetDeclaration s) {
+        add("let ");
+        foreach (i; 0 .. s.ids.length) {
+            add(s.ids[i].name[0]);
+            if (s.ids[i].type) { add(":"); s.ids[i].type.accept(this); add(" "); }
+            if (s.exprs[i]) { add(" = "); s.exprs[i].accept(this); }
+            add(", ");
         }
-
-        --depth;
-        foreach (i; 0 .. depth) str ~= "    ";
-        add("}");
+        str = str[0 .. $-2];
     }
-    override void visit(AST.IfElseStatement s) {
-        add("if ");
-        add(s.cond.tostring, " ");
-        if (s.if_body) s.if_body.accept(this);
-        if (s.else_body) {
-            add(" else ");
-            s.else_body.accept(this);
+    override void visit(AST.FunctionDeclaration s) {
+        add("func ");
+        if (s.id) {
+            add(s.id.name[0]);
+            if (s.id.type) { add(":"); s.id.type.accept(this); add(" "); }
         }
+        foreach (i; 0 .. s.args.length) {
+            add(s.args[i].name[0]);
+            if (s.args[i].type) { add(":"); s.args[i].type.accept(this); }
+            add(" ");
+        }
+        if (s.body) { add("= "); s.body.accept(this); }
     }
-    override void visit(AST.WhileStatement s) {
-        add("while ");
-        add(s.cond.tostring, "\n");
-        if (s.body) s.body.accept(this);
-    }
-    override void visit(AST.DoWhileStatement s) {
-        add("do\n");
-        if (s.body) s.body.accept(this);
-        add("while ", s.cond.tostring, ";");
-    }
-    override void visit(AST.ForStatement s) {
-        add("for ");
-        if (s.init) s.init.accept(this);
-        add(s.cond.tostring, "; ");
-        add(s.exec.tostring, "\n");
-        if (s.body) s.body.accept(this);
-    }
-    override void visit(AST.ForeachStatement s) { }
-    override void visit(AST.ForeachReverseStatement s) { }
-    override void visit(AST.BreakStatement s) {
-        add("break");
-        if (s.label) add(" ", s.label.name[0], ";");
-    }
-    override void visit(AST.ContinueStatement s) {
-        add("continue");
-        if (s.label) add(" ", s.label.name[0], ";");
-    }
-    override void visit(AST.ReturnStatement s) {
-        add("return");
-        if (s.expr) add(s.expr.tostring);
-    }
+
 
     // others
     alias visit = typeof(super).visit;

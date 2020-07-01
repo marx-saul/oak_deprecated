@@ -57,36 +57,29 @@ public struct Location {
 // when adding a token, alter this enum TokenType, (reserved_words/reserved_symbols)
 enum TokenType {
 	dummy,
-
 	identifier,
 
 	integer,
 	real_number,
 	string_literal,
 
-	// reserved words
 	true_,
 	false_,
 	null_,
-
 	int_,
 	real_,
 	string_,
 	bool_,
 	void_,
 	unit,
-
 	struct_,
 	class_,
 	interface_,
-
 	immut,
 	const_,
 	inout_,
-
 	shadow,
 	ref_,
-
 	private_,
 	protected_,
 	package_,
@@ -94,19 +87,15 @@ enum TokenType {
 	export_,
 	abstract_,
 	override_,
-
 	pure_,
 	lazy_,
-
 	import_,
 	module_,
 	let,
 	func,
-
 	any,
 	this_,
 	super_,
-
 	if_,
 	else_,
 	do_,
@@ -227,7 +216,7 @@ static const reserved_words = new TokenDict(
 	tuple("abstract",        TokenType.abstract_),
 	tuple("override",        TokenType.override_),
 
-	tuple("any",             TokenType.any),
+	tuple("_",               TokenType.any),
 	tuple("this",            TokenType.this_),
 	tuple("super",           TokenType.super_),
 
@@ -404,7 +393,7 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 		// one line comment
 		if (la == '/') {
 			// get rid of all characters until '\n'.
-			while (nextChar() != '\n') {}
+			while (!nextChar().among!('\n', EOF)) {}
 			c = nextChar();
 		}
 		// /* comment */

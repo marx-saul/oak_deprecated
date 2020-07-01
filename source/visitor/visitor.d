@@ -21,6 +21,21 @@ abstract class Visitor(AST) {
 	abstract void visit(AST.ThisExpression)          { assert(0); }
 	abstract void visit(AST.SuperExpression)         { assert(0); }
 	abstract void visit(AST.UnitExpression)          { assert(0); }
+	abstract void visit(AST.ArrayExpression)         { assert(0); }
+	abstract void visit(AST.AssocArrayExpression)    { assert(0); }
+	abstract void visit(AST.StructExpression)        { assert(0); }
+	abstract void visit(AST.IfElseExpression)        { assert(0); }
+	abstract void visit(AST.BlockExpression)         { assert(0); }
+	// Statements
+	abstract void visit(AST.Statement)               { assert(0); }
+	abstract void visit(AST.WhileStatement)          { assert(0); }
+	abstract void visit(AST.DoWhileStatement)        { assert(0); }
+	abstract void visit(AST.ForStatement)            { assert(0); }
+	abstract void visit(AST.ForeachStatement)        { assert(0); }
+	abstract void visit(AST.ForeachReverseStatement) { assert(0); }
+	abstract void visit(AST.BreakStatement)          { assert(0); }
+	abstract void visit(AST.ContinueStatement)       { assert(0); }
+	abstract void visit(AST.ReturnStatement)         { assert(0); }
 	// Types
 	abstract void visit(AST.Type)                    { assert(0); }
 	abstract void visit(AST.FunctionType)            { assert(0); }
@@ -30,19 +45,9 @@ abstract class Visitor(AST) {
 	abstract void visit(AST.TupleType)               { assert(0); }
 	abstract void visit(AST.IdentifierType)          { assert(0); }
 	abstract void visit(AST.PrimitiveType)           { assert(0); }
-	// Statements
-	abstract void visit(AST.Statement)               { assert(0); }
-	abstract void visit(AST.ExpressionStatement)     { assert(0); }
-	abstract void visit(AST.BlockStatement)          { assert(0); }
-	abstract void visit(AST.IfElseStatement)         { assert(0); }
-	abstract void visit(AST.WhileStatement)          { assert(0); }
-	abstract void visit(AST.DoWhileStatement)        { assert(0); }
-	abstract void visit(AST.ForStatement)            { assert(0); }
-	abstract void visit(AST.ForeachStatement)        { assert(0); }
-	abstract void visit(AST.ForeachReverseStatement) { assert(0); }
-	abstract void visit(AST.BreakStatement)          { assert(0); }
-	abstract void visit(AST.ContinueStatement)       { assert(0); }
-	abstract void visit(AST.ReturnStatement)         { assert(0); }
+	// Declaration
+	abstract void visit(AST.LetDeclaration)          { assert(0); }
+	abstract void visit(AST.FunctionDeclaration)     { assert(0); }
 	//abstract void visit(AST.)
 }
 
@@ -64,6 +69,21 @@ abstract class PermissiveVisitor(AST) : Visitor!AST {
 	override void visit(AST.ThisExpression)          { }
 	override void visit(AST.SuperExpression)         { }
 	override void visit(AST.UnitExpression)          { }
+	override void visit(AST.ArrayExpression)         { }
+	override void visit(AST.AssocArrayExpression)    { }
+	override void visit(AST.StructExpression)        { }
+	override void visit(AST.IfElseExpression)        { }
+	override void visit(AST.BlockExpression)         { }
+	// Statements
+	override void visit(AST.Statement)               { }
+	override void visit(AST.WhileStatement)          { }
+	override void visit(AST.DoWhileStatement)        { }
+	override void visit(AST.ForStatement)            { }
+	override void visit(AST.ForeachStatement)        { }
+	override void visit(AST.ForeachReverseStatement) { }
+	override void visit(AST.BreakStatement)          { }
+	override void visit(AST.ContinueStatement)       { }
+	override void visit(AST.ReturnStatement)         { }
 	// Types
 	override void visit(AST.Type)                    { }
 	override void visit(AST.FunctionType)            { }
@@ -73,17 +93,7 @@ abstract class PermissiveVisitor(AST) : Visitor!AST {
 	override void visit(AST.TupleType)               { }
 	override void visit(AST.IdentifierType)          { }
 	override void visit(AST.PrimitiveType)           { }
-	// Statements
-	override void visit(AST.Statement)               { }
-	override void visit(AST.ExpressionStatement)     { }
-	override void visit(AST.BlockStatement)          { }
-	override void visit(AST.IfElseStatement)         { }
-	override void visit(AST.WhileStatement)          { }
-	override void visit(AST.DoWhileStatement)        { }
-	override void visit(AST.ForStatement)            { }
-	override void visit(AST.ForeachStatement)        { }
-	override void visit(AST.ForeachReverseStatement) { }
-	override void visit(AST.BreakStatement)          { }
-	override void visit(AST.ContinueStatement)       { }
-	override void visit(AST.ReturnStatement)         { }
+	// Declaration
+	override void visit(AST.LetDeclaration)          { }
+	override void visit(AST.FunctionDeclaration)     { }
 }

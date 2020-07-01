@@ -1,3 +1,7 @@
 module type;
 
-class Type {}
+import attribute;
+
+class Type {
+    Attribute attr;
+}

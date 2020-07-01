@@ -1,3 +1,16 @@
 def f:int  0 = 1;
 def f:int  n:int (n > 0) = n * f (n-1);
 
+func @pure @inline add:int x:int y:int {
+	return x + y;
+}
+
+let m = 25, n = 27;
+let:int x = 3, y = 4;
+let a:int = 8, msg:string = "Message.";
+const msg3 = "message?", pi = 3.1415;
+immut msg5 = "message!", omega = 0.12345678910111213
+
+func(a, b) map:[b] f:a->b xs:[a] =
+	[]                                 when xs.length == 0 else
+	(map f xs![0 .. $-1]) ~ f xs![$-1];
