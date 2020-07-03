@@ -1,99 +1,101 @@
 module visitor.visitor;
 
-import ast.astbase: ASTBase;
+import ast.all;
 
 // AST visitor, forces to implement visit for all AST types.
-abstract class Visitor(AST) {
-	abstract void visit(AST.ASTNode)                 { assert(0); }
+abstract class Visitor {
+	abstract void visit(ASTNode)                 { assert(0); }
 	// Expressions
-	abstract void visit(AST.Expression)              { assert(0); }
-	abstract void visit(AST.BinaryExpression)        { assert(0); }
-	abstract void visit(AST.UnaryExpression)         { assert(0); }
-	abstract void visit(AST.WhenExpression)          { assert(0); }
-	abstract void visit(AST.TupleExpression)         { assert(0); }
-	abstract void visit(AST.IndexExpression)         { assert(0); }
-	abstract void visit(AST.SliceExpression)         { assert(0); }
-	abstract void visit(AST.IntegerExpression)       { assert(0); }
-	abstract void visit(AST.RealExpression)          { assert(0); }
-	abstract void visit(AST.StringExpression)        { assert(0); }
-	abstract void visit(AST.IdentifierExpression)    { assert(0); }
-	abstract void visit(AST.DollarExpression)        { assert(0); }
-	abstract void visit(AST.ThisExpression)          { assert(0); }
-	abstract void visit(AST.SuperExpression)         { assert(0); }
-	abstract void visit(AST.UnitExpression)          { assert(0); }
-	abstract void visit(AST.ArrayExpression)         { assert(0); }
-	abstract void visit(AST.AssocArrayExpression)    { assert(0); }
-	abstract void visit(AST.StructExpression)        { assert(0); }
-	abstract void visit(AST.IfElseExpression)        { assert(0); }
-	abstract void visit(AST.BlockExpression)         { assert(0); }
+	abstract void visit(Expression)              { assert(0); }
+	abstract void visit(BinaryExpression)        { assert(0); }
+	abstract void visit(UnaryExpression)         { assert(0); }
+	abstract void visit(WhenExpression)          { assert(0); }
+	abstract void visit(TupleExpression)         { assert(0); }
+	abstract void visit(IndexExpression)         { assert(0); }
+	abstract void visit(SliceExpression)         { assert(0); }
+	abstract void visit(IntegerExpression)       { assert(0); }
+	abstract void visit(RealExpression)          { assert(0); }
+	abstract void visit(StringExpression)        { assert(0); }
+	abstract void visit(IdentifierExpression)    { assert(0); }
+	abstract void visit(DollarExpression)        { assert(0); }
+	abstract void visit(ThisExpression)          { assert(0); }
+	abstract void visit(SuperExpression)         { assert(0); }
+	abstract void visit(UnitExpression)          { assert(0); }
+	abstract void visit(ArrayExpression)         { assert(0); }
+	abstract void visit(AssocArrayExpression)    { assert(0); }
+	abstract void visit(StructExpression)        { assert(0); }
+	abstract void visit(IfElseExpression)        { assert(0); }
+	abstract void visit(BlockExpression)         { assert(0); }
 	// Statements
-	abstract void visit(AST.Statement)               { assert(0); }
-	abstract void visit(AST.WhileStatement)          { assert(0); }
-	abstract void visit(AST.DoWhileStatement)        { assert(0); }
-	abstract void visit(AST.ForStatement)            { assert(0); }
-	abstract void visit(AST.ForeachStatement)        { assert(0); }
-	abstract void visit(AST.ForeachReverseStatement) { assert(0); }
-	abstract void visit(AST.BreakStatement)          { assert(0); }
-	abstract void visit(AST.ContinueStatement)       { assert(0); }
-	abstract void visit(AST.ReturnStatement)         { assert(0); }
+	abstract void visit(Statement)               { assert(0); }
+	abstract void visit(WhileStatement)          { assert(0); }
+	abstract void visit(DoWhileStatement)        { assert(0); }
+	abstract void visit(ForStatement)            { assert(0); }
+	abstract void visit(ForeachStatement)        { assert(0); }
+	abstract void visit(ForeachReverseStatement) { assert(0); }
+	abstract void visit(BreakStatement)          { assert(0); }
+	abstract void visit(ContinueStatement)       { assert(0); }
+	abstract void visit(ReturnStatement)         { assert(0); }
 	// Types
-	abstract void visit(AST.Type)                    { assert(0); }
-	abstract void visit(AST.FunctionType)            { assert(0); }
-	abstract void visit(AST.ArrayType)               { assert(0); }
-	abstract void visit(AST.AssocArrayType)          { assert(0); }
-	abstract void visit(AST.PointerType)             { assert(0); }
-	abstract void visit(AST.TupleType)               { assert(0); }
-	abstract void visit(AST.IdentifierType)          { assert(0); }
-	abstract void visit(AST.PrimitiveType)           { assert(0); }
+	abstract void visit(Type)                    { assert(0); }
+	abstract void visit(FunctionType)            { assert(0); }
+	abstract void visit(ArrayType)               { assert(0); }
+	abstract void visit(AssocArrayType)          { assert(0); }
+	abstract void visit(PointerType)             { assert(0); }
+	abstract void visit(TupleType)               { assert(0); }
+	abstract void visit(IdentifierType)          { assert(0); }
+	abstract void visit(PrimitiveType)           { assert(0); }
 	// Declaration
-	abstract void visit(AST.LetDeclaration)          { assert(0); }
-	abstract void visit(AST.FunctionDeclaration)     { assert(0); }
-	//abstract void visit(AST.)
+	abstract void visit(LetDeclaration)          { assert(0); }
+	abstract void visit(FunctionDeclaration)     { assert(0); }
+	abstract void visit(LabelDeclaration)        { assert(0); }
+	//abstract void visit()
 }
 
-abstract class PermissiveVisitor(AST) : Visitor!AST {
-	override void visit(AST.ASTNode)                 { }
+abstract class PermissiveVisitor : Visitor {
+	override void visit(ASTNode)                 { }
 	// Expressions
-	override void visit(AST.Expression)              { }
-	override void visit(AST.BinaryExpression)        { }
-	override void visit(AST.UnaryExpression)         { }
-	override void visit(AST.WhenExpression)          { }
-	override void visit(AST.TupleExpression)         { }
-	override void visit(AST.IndexExpression)         { }
-	override void visit(AST.SliceExpression)         { }
-	override void visit(AST.IntegerExpression)       { }
-	override void visit(AST.RealExpression)          { }
-	override void visit(AST.StringExpression)        { }
-	override void visit(AST.IdentifierExpression)    { }
-	override void visit(AST.DollarExpression)        { }
-	override void visit(AST.ThisExpression)          { }
-	override void visit(AST.SuperExpression)         { }
-	override void visit(AST.UnitExpression)          { }
-	override void visit(AST.ArrayExpression)         { }
-	override void visit(AST.AssocArrayExpression)    { }
-	override void visit(AST.StructExpression)        { }
-	override void visit(AST.IfElseExpression)        { }
-	override void visit(AST.BlockExpression)         { }
+	override void visit(Expression)              { }
+	override void visit(BinaryExpression)        { }
+	override void visit(UnaryExpression)         { }
+	override void visit(WhenExpression)          { }
+	override void visit(TupleExpression)         { }
+	override void visit(IndexExpression)         { }
+	override void visit(SliceExpression)         { }
+	override void visit(IntegerExpression)       { }
+	override void visit(RealExpression)          { }
+	override void visit(StringExpression)        { }
+	override void visit(IdentifierExpression)    { }
+	override void visit(DollarExpression)        { }
+	override void visit(ThisExpression)          { }
+	override void visit(SuperExpression)         { }
+	override void visit(UnitExpression)          { }
+	override void visit(ArrayExpression)         { }
+	override void visit(AssocArrayExpression)    { }
+	override void visit(StructExpression)        { }
+	override void visit(IfElseExpression)        { }
+	override void visit(BlockExpression)         { }
 	// Statements
-	override void visit(AST.Statement)               { }
-	override void visit(AST.WhileStatement)          { }
-	override void visit(AST.DoWhileStatement)        { }
-	override void visit(AST.ForStatement)            { }
-	override void visit(AST.ForeachStatement)        { }
-	override void visit(AST.ForeachReverseStatement) { }
-	override void visit(AST.BreakStatement)          { }
-	override void visit(AST.ContinueStatement)       { }
-	override void visit(AST.ReturnStatement)         { }
+	override void visit(Statement)               { }
+	override void visit(WhileStatement)          { }
+	override void visit(DoWhileStatement)        { }
+	override void visit(ForStatement)            { }
+	override void visit(ForeachStatement)        { }
+	override void visit(ForeachReverseStatement) { }
+	override void visit(BreakStatement)          { }
+	override void visit(ContinueStatement)       { }
+	override void visit(ReturnStatement)         { }
 	// Types
-	override void visit(AST.Type)                    { }
-	override void visit(AST.FunctionType)            { }
-	override void visit(AST.ArrayType)               { }
-	override void visit(AST.AssocArrayType)          { }
-	override void visit(AST.PointerType)             { }
-	override void visit(AST.TupleType)               { }
-	override void visit(AST.IdentifierType)          { }
-	override void visit(AST.PrimitiveType)           { }
+	override void visit(Type)                    { }
+	override void visit(FunctionType)            { }
+	override void visit(ArrayType)               { }
+	override void visit(AssocArrayType)          { }
+	override void visit(PointerType)             { }
+	override void visit(TupleType)               { }
+	override void visit(IdentifierType)          { }
+	override void visit(PrimitiveType)           { }
 	// Declaration
-	override void visit(AST.LetDeclaration)          { }
-	override void visit(AST.FunctionDeclaration)     { }
+	override void visit(LetDeclaration)          { }
+	override void visit(FunctionDeclaration)     { }
+	override void visit(LabelDeclaration)        { }
 }

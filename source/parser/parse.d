@@ -1,9 +1,19 @@
-module parser;
+module parser.parse;
 
-import message, lexer, ast.astbase, ast.symbol, attribute;
+import message, parser.lexer, ast.all;
 import std.algorithm, std.meta, std.conv;
 
-final class Parser(AST, Lex)
+void check(L)(L lex, TokenType tt, bool always_pop = true, string additional_msg = "") {
+	if (tt != lex.token.type) {
+		error(tt.to!string ~ " expected, not '" ~ lex.token.str ~ "' " ~ additional_msg);
+		if (always_pop) lex.nextToken();
+	}
+	else lex.nextToken();
+}
+
+
+/+
+final class Parser(Lex)
 	if (isLexer!Lex)
 {
 	/* **** methods **** */
@@ -25,7 +35,7 @@ final class Parser(AST, Lex)
 	/* *************************************** *
 					 Expression
 	 * *************************************** */
-	private pure bool isFirstOfExpression(TokenType t) @property {
+	private pure bool isFirstOfExpression(TokenType t) {
 		with (TokenType)
 		return t.among!(
 			integer, real_number, string_literal,
@@ -37,13 +47,13 @@ final class Parser(AST, Lex)
 		) != 0;
 	}
 
-	private bool isFirstOfExpression() @property {
+	private bool isFirstOfExpression() {
 		return isFirstOfExpression(token.type);
 	}
 
 	alias expression = assignExpression;
 
-	AST.Expression assignExpression() {
+	Expression assignExpression() {
 		auto e = whenExpression();
 
 		with (TokenType)
@@ -54,13 +64,13 @@ final class Parser(AST, Lex)
 			auto loc_tmp = loc;
 			nextToken();	// get rid of _=
 			auto e2 = assignExpression();
-			e = new AST.BinaryExpression(loc_tmp, tt, e, e2);
+			e = new BinaryExpression(loc_tmp, tt, e, e2);
 		}
 
 		return e;
 	}
 
-	AST.Expression whenExpression() {
+	Expression whenExpression() {
 		auto e = pipelineExpression();
 
 		with (TokenType)
@@ -70,13 +80,13 @@ final class Parser(AST, Lex)
 			auto e2 = pipelineExpression();
 			check(else_);	// get rid of else
 			auto e3 = whenExpression();
-			e = new AST.WhenExpression(loc_tmp, e, e2, e3);
+			e = new WhenExpression(loc_tmp, e, e2, e3);
 		}
 
 		return e;
 	}
 
-	AST.Expression pipelineExpression() {
+	Expression pipelineExpression() {
 		auto e = appExpression();
 
 		with (TokenType)
@@ -84,13 +94,13 @@ final class Parser(AST, Lex)
 			auto loc_tmp = loc;
 			nextToken();	// get rid of |>
 			auto e2 = appExpression();
-			e = new AST.BinaryExpression(loc_tmp, pipeline, e, e2);
+			e = new BinaryExpression(loc_tmp, pipeline, e, e2);
 		}
 
 		return e;
 	}
 
-	AST.Expression appExpression() {
+	Expression appExpression() {
 		auto e = orExpression();
 
 		with (TokenType)
@@ -98,13 +108,13 @@ final class Parser(AST, Lex)
 			auto loc_tmp = loc;
 			nextToken();	// get rid of app
 			auto e2 = appExpression();
-			e = new AST.BinaryExpression(loc_tmp, app, e, e2);
+			e = new BinaryExpression(loc_tmp, app, e, e2);
 		}
 
 		return e;
 	}
 
-	AST.Expression orExpression() {
+	Expression orExpression() {
 		auto e = xorExpression();
 
 		with (TokenType)
@@ -112,13 +122,13 @@ final class Parser(AST, Lex)
 			auto loc_tmp = loc;
 			nextToken();	// get rid of or
 			auto e2 = xorExpression();
-			e = new AST.BinaryExpression(loc_tmp, or, e, e2);
+			e = new BinaryExpression(loc_tmp, or, e, e2);
 		}
 
 		return e;
 	}
 
-	AST.Expression xorExpression() {
+	Expression xorExpression() {
 		auto e = andExpression();
 
 		with (TokenType)
@@ -126,13 +136,13 @@ final class Parser(AST, Lex)
 			auto loc_tmp = loc;
 			nextToken();	// get rid of xor
 			auto e2 = andExpression();
-			e = new AST.BinaryExpression(loc_tmp, xor, e, e2);
+			e = new BinaryExpression(loc_tmp, xor, e, e2);
 		}
 
 		return e;
 	}
 
-	AST.Expression andExpression() {
+	Expression andExpression() {
 		auto e = bit_orExpression();
 
 		with (TokenType)
@@ -140,13 +150,13 @@ final class Parser(AST, Lex)
 			auto loc_tmp = loc;
 			nextToken();	// get rid of and
 			auto e2 = bit_orExpression();
-			e = new AST.BinaryExpression(loc_tmp, and, e, e2);
+			e = new BinaryExpression(loc_tmp, and, e, e2);
 		}
 
 		return e;
 	}
 
-	AST.Expression bit_orExpression() {
+	Expression bit_orExpression() {
 		auto e = bit_xorExpression();
 
 		with (TokenType)
@@ -154,13 +164,13 @@ final class Parser(AST, Lex)
 			auto loc_tmp = loc;
 			nextToken();	// |
 			auto e2 = bit_xorExpression();
-			e = new AST.BinaryExpression(loc_tmp, bit_or, e, e2);
+			e = new BinaryExpression(loc_tmp, bit_or, e, e2);
 		}
 
 		return e;
 	}
 
-	AST.Expression bit_xorExpression() {
+	Expression bit_xorExpression() {
 		auto e = bit_andExpression();
 
 		with (TokenType)
@@ -168,13 +178,13 @@ final class Parser(AST, Lex)
 			auto loc_tmp = loc;
 			nextToken();	// get rid of ^
 			auto e2 = bit_andExpression();
-			e = new AST.BinaryExpression(loc_tmp, bit_xor, e, e2);
+			e = new BinaryExpression(loc_tmp, bit_xor, e, e2);
 		}
 
 		return e;
 	}
 
-	AST.Expression bit_andExpression() {
+	Expression bit_andExpression() {
 		auto e = compareExpression();
 
 		with (TokenType)
@@ -182,13 +192,13 @@ final class Parser(AST, Lex)
 			auto loc_tmp = loc;
 			nextToken();	// get rid of and
 			auto e2 = compareExpression();
-			e = new AST.BinaryExpression(loc_tmp, bit_and, e, e2);
+			e = new BinaryExpression(loc_tmp, bit_and, e, e2);
 		}
 
 		return e;
 	}
 
-	AST.Expression compareExpression() {
+	Expression compareExpression() {
 		auto e = shiftExpression();
 
 		with (TokenType)
@@ -197,13 +207,13 @@ final class Parser(AST, Lex)
 			auto tt = token.type;
 			nextToken();	// get rid of ==, ...
 			auto e2 = shiftExpression();
-			e = new AST.BinaryExpression(loc_tmp, tt, e, e2);
+			e = new BinaryExpression(loc_tmp, tt, e, e2);
 		}
 
 		return e;
 	}
 
-	AST.Expression shiftExpression() {
+	Expression shiftExpression() {
 		auto e = addExpression();
 
 		with (TokenType)
@@ -212,13 +222,13 @@ final class Parser(AST, Lex)
 			auto tt = token.type;
 			nextToken();	// get rid of << >> >>>
 			auto e2 = addExpression();
-			e = new AST.BinaryExpression(loc_tmp, tt, e, e2);
+			e = new BinaryExpression(loc_tmp, tt, e, e2);
 		}
 
 		return e;
 	}
 
-	AST.Expression addExpression() {
+	Expression addExpression() {
 		auto e = mulExpression();
 
 		with (TokenType)
@@ -227,13 +237,13 @@ final class Parser(AST, Lex)
 			auto tt = token.type;
 			nextToken();	// get rid of + - ++
 			auto e2 = mulExpression();
-			e = new AST.BinaryExpression(loc_tmp, tt, e, e2);
+			e = new BinaryExpression(loc_tmp, tt, e, e2);
 		}
 
 		return e;
 	}
 
-	AST.Expression mulExpression() {
+	Expression mulExpression() {
 		auto e = unaryExpression();
 
 		with (TokenType)
@@ -242,24 +252,24 @@ final class Parser(AST, Lex)
 			auto tt = token.type;
 			nextToken();	// get rid of * / %
 			auto e2 = unaryExpression();
-			e = new AST.BinaryExpression(loc_tmp, tt, e, e2);
+			e = new BinaryExpression(loc_tmp, tt, e, e2);
 		}
 
 		return e;
 	}
 
-	AST.Expression unaryExpression() {
+	Expression unaryExpression() {
 		with (TokenType)
 		if (token.type.among!(u_sub, bit_not, not, ref_of, deref)) {
 			auto loc_tmp = loc;
 			auto tt = token.type;
 			nextToken();	// get rid of -- ~ not # !
-			return new AST.UnaryExpression(loc_tmp, tt, unaryExpression());
+			return new UnaryExpression(loc_tmp, tt, unaryExpression());
 		}
 		else return powExpression();
 	}
 
-	AST.Expression powExpression() {
+	Expression powExpression() {
 		auto e = applyExpression();
 
 		with (TokenType)
@@ -267,37 +277,37 @@ final class Parser(AST, Lex)
 			auto loc_tmp = loc;
 			nextToken();	// get rid of ^^
 			auto e2 = applyExpression();
-			e = new AST.BinaryExpression(loc_tmp, pow, e, e2);
+			e = new BinaryExpression(loc_tmp, pow, e, e2);
 		}
 
 		return e;
 	}
 
-	AST.Expression applyExpression() {
+	Expression applyExpression() {
 		auto e = indexingExpression();
 
 		with (TokenType)
 		while (isFirstOfExpression()) {
 			auto loc_tmp = loc;
 			auto e2 = indexing_unaryExpression();
-			e = new AST.BinaryExpression(loc_tmp, apply, e, e2);
+			e = new BinaryExpression(loc_tmp, apply, e, e2);
 		}
 
 		return e;
 	}
 
-	AST.Expression indexing_unaryExpression() {
+	Expression indexing_unaryExpression() {
 		with (TokenType)
 		if (token.type.among!(u_sub, bit_not, not, ref_of, deref)) {
 			auto loc_tmp = loc;
 			auto tt = token.type;
 			nextToken();	// get rid of -- ~ not # !
-			return new AST.UnaryExpression(loc_tmp, tt, indexing_unaryExpression());
+			return new UnaryExpression(loc_tmp, tt, indexing_unaryExpression());
 		}
 		else return indexingExpression();
 	}
 
-	AST.Expression indexingExpression() {
+	Expression indexingExpression() {
 		auto e = compositionExpression();
 
 		with (TokenType)
@@ -310,11 +320,11 @@ final class Parser(AST, Lex)
 				nextToken();	// get rid of ..
 				auto e3 = expression();
 				check(rBrack);	// get rid of ]
-				e = new AST.SliceExpression(loc_tmp, e, e2, e3);
+				e = new SliceExpression(loc_tmp, e, e2, e3);
 			}
 			// ![ E2_0 , E2_1 , ... , E2_n ]
 			else {
-				AST.Expression[] es = [e2];
+				Expression[] es = [e2];
 				while (true) {
 					if (token.type == comma) {
 						nextToken();	// get rid of ,
@@ -329,14 +339,14 @@ final class Parser(AST, Lex)
 					}
 					es ~= expression();
 				}
-				e = new AST.IndexExpression(loc_tmp, e, es);
+				e = new IndexExpression(loc_tmp, e, es);
 			}
 		}
 
 		return e;
 	}
 
-	AST.Expression compositionExpression() {
+	Expression compositionExpression() {
 		auto e = dotExpression();
 
 		with (TokenType)
@@ -344,13 +354,13 @@ final class Parser(AST, Lex)
 			auto loc_tmp = loc;
 			nextToken();	// get rid of @
 			auto e2 = dotExpression();
-			e = new AST.BinaryExpression(loc_tmp, composition, e, e2);
+			e = new BinaryExpression(loc_tmp, composition, e, e2);
 		}
 
 		return e;
 	}
 
-	AST.Expression dotExpression() {
+	Expression dotExpression() {
 		auto e = templateExpression();
 
 		with (TokenType)
@@ -358,13 +368,13 @@ final class Parser(AST, Lex)
 			auto loc_tmp = loc;
 			nextToken();	// get rid of .
 			auto e2 = templateExpression();
-			e = new AST.BinaryExpression(loc_tmp, dot, e, e2);
+			e = new BinaryExpression(loc_tmp, dot, e, e2);
 		}
 
 		return e;
 	}
 
-	AST.Expression templateExpression() {
+	Expression templateExpression() {
 		auto e = atomExpression();
 
 		with (TokenType)
@@ -373,13 +383,13 @@ final class Parser(AST, Lex)
 			auto tt = token.type;
 			nextToken();	// get rid of .
 			auto e2 = templateExpression();
-			e = new AST.BinaryExpression(loc_tmp, tt, e, e2);
+			e = new BinaryExpression(loc_tmp, tt, e, e2);
 		}
 
 		return e;
 	}
 
-	AST.Expression atomExpression() {
+	Expression atomExpression() {
 		with (TokenType)
 		switch (token.type) {
 			case integer:          return integerExpression();
@@ -411,7 +421,7 @@ final class Parser(AST, Lex)
 		}
 	}
 
-	AST.Expression integerExpression() {
+	Expression integerExpression() {
 		long val = 0;
 		// Hex
 		if      (token.str.length >= 2 && token.str[0..2].among!("0x", "0X")) {
@@ -440,48 +450,48 @@ final class Parser(AST, Lex)
 			}
 		}
 
-		auto e = new AST.IntegerExpression(loc, val);
+		auto e = new IntegerExpression(loc, val);
 		nextToken();
 		return e;
 	}
 
-	AST.Expression realExpression() {
-		auto e = new AST.RealExpression(loc, 0.0);
+	Expression realExpression() {
+		auto e = new RealExpression(loc, 0.0);
 		nextToken();
 		return e;
 	}
 
-	AST.Expression stringExpression() {
-		auto e = new AST.StringExpression(loc, token.str);
+	Expression stringExpression() {
+		auto e = new StringExpression(loc, token.str);
 		nextToken();
 		return e;
 	}
 
-	AST.Expression identifierExpression() {
-		auto e = new AST.IdentifierExpression(loc, new Identifier(token.str));
+	Expression identifierExpression() {
+		auto e = new IdentifierExpression(loc, new Identifier(token.str));
 		nextToken();
 		return e;
 	}
-	AST.Expression dollarExpression() {
+	Expression dollarExpression() {
 		auto sym = new Identifier(token.str);
-		auto e = new AST.DollarExpression(loc, sym);
+		auto e = new DollarExpression(loc, sym);
 		nextToken();
 		return e;
 	}
-	AST.Expression thisExpression() {
+	Expression thisExpression() {
 		auto sym = new Identifier(token.str);
-		auto e = new AST.ThisExpression(loc, sym);
+		auto e = new ThisExpression(loc, sym);
 		nextToken();
 		return e;
 	}
-	AST.Expression superExpression() {
+	Expression superExpression() {
 		auto sym = new Identifier(token.str);
-		auto e = new AST.SuperExpression(loc, sym);
+		auto e = new SuperExpression(loc, sym);
 		nextToken();
 		return e;
 	}
 
-	AST.Expression structExpression() {
+	Expression structExpression() {
 		auto loc_tmp = loc;
 		nextToken();	// get rid of struct
 		nextToken();	// get rid of (
@@ -489,7 +499,7 @@ final class Parser(AST, Lex)
 		check(TokenType.rPar);
 		check(TokenType.lBrace);
 		string[] members;
-		AST.Expression[] exprs;
+		Expression[] exprs;
 		with (TokenType)
 		while (true) {
 			if (token.type == comma) {
@@ -516,16 +526,16 @@ final class Parser(AST, Lex)
 			check(TokenType.colon);
 			exprs ~= expression();
 		}
-		return new AST.StructExpression(loc_tmp, type, members, exprs);
+		return new StructExpression(loc_tmp, type, members, exprs);
 	}
 
 	// an associative array or an array
-	AST.Expression assocArrayExpression() {
+	Expression assocArrayExpression() {
 		auto loc_tmp = loc;
 		nextToken();	// get rid of [
 		if (token.type == TokenType.rBrack) {
 			nextToken();	// get rid of ]
-			return new AST.ArrayExpression(loc_tmp, []);
+			return new ArrayExpression(loc_tmp, []);
 		}
 
 		auto e1 = expression();
@@ -551,7 +561,7 @@ final class Parser(AST, Lex)
 				check(TokenType.colon);
 				values ~= expression();
 			}
-			return new AST.AssocArrayExpression(loc_tmp, keys, values);
+			return new AssocArrayExpression(loc_tmp, keys, values);
 		}
 		// array
 		else if (token.type == comma) {
@@ -570,30 +580,30 @@ final class Parser(AST, Lex)
 				}
 				es ~= expression();
 			}
-			return new AST.ArrayExpression(loc_tmp, es);
+			return new ArrayExpression(loc_tmp, es);
 		}
 		else if (token.type == rBrack) {
 			nextToken();	// get rid of ]
-			return new AST.ArrayExpression(loc_tmp, [e1]);
+			return new ArrayExpression(loc_tmp, [e1]);
 		}
 		else {
 			error("] expected for an array, not " ~ token.type.to!string);
-			return new AST.ArrayExpression(loc_tmp, [e1]);
+			return new ArrayExpression(loc_tmp, [e1]);
 		}
 	}
 
-	AST.Expression tupleExpression() {
+	Expression tupleExpression() {
 		auto loc_tmp = loc;
 		nextToken();	// get rid of (
 
 		// ()
 		if (token.type == TokenType.rPar) {
 			nextToken();	// get rid of )
-			return new AST.UnitExpression(loc_tmp);
+			return new UnitExpression(loc_tmp);
 		}
 
 		auto e1 = expression();
-		AST.Expression[] es = [e1];
+		Expression[] es = [e1];
 		with (TokenType)
 		while (true) {
 			if (token.type == comma) {
@@ -609,11 +619,11 @@ final class Parser(AST, Lex)
 			}
 			es ~= expression();
 		}
-		if (es.length > 1) return new AST.TupleExpression(loc_tmp, es);
+		if (es.length > 1) return new TupleExpression(loc_tmp, es);
 		else return e1;
 	}
 
-	AST.IfElseExpression ifElseExpression() {
+	IfElseExpression ifElseExpression() {
 		auto loc_tmp = loc;
 		nextToken();	// get rid of if
 		auto cond = expression();
@@ -622,19 +632,26 @@ final class Parser(AST, Lex)
 		if (token.type == TokenType.else_) {
 			nextToken();	// get rid of else
 			auto else_block = expression();
-			return new AST.IfElseExpression(loc_tmp, cond, if_block, else_block);
+			return new IfElseExpression(loc_tmp, cond, if_block, else_block);
 		}
 		else {
-			return new AST.IfElseExpression(loc_tmp, cond, if_block, new AST.UnitExpression(loc));
+			return new IfElseExpression(loc_tmp, cond, if_block, new UnitExpression(loc));
 		}
 	}
 
-	AST.BlockExpression blockExpression() {
+	BlockExpression blockExpression() {
 		auto loc_tmp = loc;
 		nextToken();	// get rid of {
-		AST.ASTNode[] ns;
+		ASTNode[] ns;
 		with (TokenType)
 		do {
+			// label
+			if (token.type == identifier && lex.lookahead.type == colon) {
+				ns ~= new LabelDeclaration(loc, token.str);
+				nextToken();	// get rid of identifier
+				nextToken();	// get rid of :
+				continue;
+			}
 			// expression
 			if (isFirstOfExpression()) {
 				ns ~= expression();
@@ -644,21 +661,30 @@ final class Parser(AST, Lex)
 					is_semicolon = true;
 				}
 				if (token.type == rBrace) {
-					if (is_semicolon) ns ~= new AST.UnitExpression(loc);
+					if (is_semicolon) ns ~= new UnitExpression(loc);
 					nextToken();	// get rid of }
 					break;
 				}
 			}
-			// let declaration
-			else if (token.type == let) {
-				ns ~= letDeclaration();
-			}
-			else if (token.type == func) {
-				ns ~= functionDeclaration();
-			}
-			else {
-				error("Invalid token '" ~ token.str ~ "' found in a block expression");
-				nextToken();
+			// declaration
+			else with (Attribute) {
+				auto attr = attribute(
+					immut | const_ | inout_ | private_ | protected_ | package_ | public_ | export_
+				  | final_ | static_ | pure_ | safe | trusted | system | throwable
+				);
+				with (TokenType)
+				switch (token.type) {
+				case let:
+					ns ~= letDeclaration(attr);
+					break;
+				case func:
+					ns ~= functionDeclaration(attr);
+					break;
+				default:
+					error("An expression or declarations expected in a block expression, not " ~ token.str);
+					nextToken();
+					break;
+				}
 			}
 
 			if (token.type == rBrace) {
@@ -671,33 +697,33 @@ final class Parser(AST, Lex)
 			}
 
 		} while (true);
-		if (ns.length == 0) ns = [new AST.UnitExpression(loc_tmp)];
-		return new AST.BlockExpression(loc_tmp, ns);
+		if (ns.length == 0) ns = [new UnitExpression(loc_tmp)];
+		return new BlockExpression(loc_tmp, ns);
 	}
 
 	/* *************************************** *
 					 Statement
 	 * *************************************** */
-	AST.WhileStatement whileStatement() {
+	WhileStatement whileStatement() {
 		auto loc_tmp = loc;
 		nextToken();	// get rid of while
 		auto cond = expression();
 		check(TokenType.colon);
 		auto body = expression();
-		return new AST.WhileStatement(loc_tmp, cond, body);
+		return new WhileStatement(loc_tmp, cond, body);
 	}
 
-	AST.DoWhileStatement doWhileStatement() {
+	DoWhileStatement doWhileStatement() {
 		auto loc_tmp = loc;
 		nextToken();	// get rid of do
 		auto body = expression();
 		check(TokenType.while_);
 		auto cond = expression();
 		check(TokenType.semicolon);
-		return new AST.DoWhileStatement(loc_tmp, body, cond);
+		return new DoWhileStatement(loc_tmp, body, cond);
 	}
 
-	AST.ForStatement forStatement() {
+	ForStatement forStatement() {
 		auto loc_tmp = loc;
 		nextToken();	// get rid of for
 		auto init = expression();
@@ -707,22 +733,22 @@ final class Parser(AST, Lex)
 		auto exec = expression();
 		check(TokenType.colon);
 		auto body = expression();
-		return new AST.ForStatement(loc_tmp, init, cond, exec, body);
+		return new ForStatement(loc_tmp, init, cond, exec, body);
 	}
 
-	AST.ForeachStatement foreachStatement() {
+	ForeachStatement foreachStatement() {
 		//auto loc_tmp = loc;
 		//nextToken();	// get rid of foreach
 		return null;
 	}
 
-	AST.ForeachReverseStatement foreachReverseStatement() {
+	ForeachReverseStatement foreachReverseStatement() {
 		//auto loc_tmp = loc;
 		//nextToken();	// get rid of foreach
 		return null;
 	}
 
-	AST.BreakStatement breakStatement() {
+	BreakStatement breakStatement() {
 		auto loc_tmp = loc;
 		nextToken();	// get rid of break
 		Identifier label;
@@ -731,10 +757,10 @@ final class Parser(AST, Lex)
 			nextToken();	// get rid of label
 		}
 		check(TokenType.semicolon);
-		return new AST.BreakStatement(loc_tmp, label);
+		return new BreakStatement(loc_tmp, label);
 	}
 
-	AST.ContinueStatement continueStatement() {
+	ContinueStatement continueStatement() {
 		auto loc_tmp = loc;
 		nextToken();	// get rid of continue
 		Identifier label;
@@ -743,63 +769,53 @@ final class Parser(AST, Lex)
 			nextToken();	// get rid of label
 		}
 		check(TokenType.semicolon);
-		return new AST.ContinueStatement(loc_tmp, label);
+		return new ContinueStatement(loc_tmp, label);
 	}
 
-	AST.ReturnStatement returnStatement() {
+	ReturnStatement returnStatement() {
 		auto loc_tmp = loc;
 		nextToken();	// get rid of continue
-		AST.Expression expr;
+		Expression expr;
 		if (isFirstOfExpression()) {
 			expr = expression();
 		}
 		check(TokenType.semicolon);
-		return new AST.ReturnStatement(loc_tmp, expr);
+		return new ReturnStatement(loc_tmp, expr);
 	}
 
 	/* *************************************** *
 					   Type
 	 * *************************************** */
-	AST.Type type() {
-		auto attr = typeQualifier();
-		auto result = functionType();
-		result.attr = attr;
+	Type attributedType(Attribute allowed) {
+		auto attr = attribute(allowed);
+		auto result = type();
+		if (result) result.attr &= attr;
 		return result;
 	}
 
-	Attribute typeQualifier() {
-		Attribute attr;
-		with (TokenType)
-		while (token.type.among!(immut, const_, inout_, ref_, lazy_)) {
-			auto t = token.type;
-			switch (token.type) {
-				case immut:  attr &= Attribute.immut;  break;
-				case const_: attr &= Attribute.const_; break;
-				case inout_: attr &= Attribute.inout_; break;
-				case ref_:   attr &= Attribute.ref_;   break;
-				case lazy_:  attr &= Attribute.lazy_;  break;
-				default: assert(0);
-			}
-		}
-		return attr;
+	Type type() {
+		auto attr = attribute(Attribute.immut & Attribute.const_ & Attribute.inout_);
+		auto result = functionType();
+		if (result) result.attr &= attr;
+		return result;
 	}
 
-	AST.Type functionType() {
+	Type functionType() {
 		auto t = arrayType();
 		if (token.type == TokenType.right_arrow) {
 			auto loc_tmp = loc;
 			nextToken();	// get rid of ->
 			auto t2 = functionType();
-			t = new AST.FunctionType(loc_tmp, t, t2);
+			t = new FunctionType(loc_tmp, t, t2);
 		}
 		return t;
 	}
 
 	// array, associative array, pointer
-	AST.Type arrayType() {
+	Type arrayType() {
 		with (TokenType)
 		if      (token.type == lBrack) {
-			AST.Type t;
+			Type t;
 			auto loc_tmp = loc;
 			nextToken();	// get rid of [
 			auto k = type();
@@ -807,11 +823,11 @@ final class Parser(AST, Lex)
 			if (token.type == colon) {
 				nextToken();	// get rid of :
 				auto v = type();
-				t = new AST.AssocArrayType(loc_tmp, k, v);
+				t = new AssocArrayType(loc_tmp, k, v);
 			}
 			// array
 			else {
-				t = new AST.ArrayType(loc_tmp, k);
+				t = new ArrayType(loc_tmp, k);
 			}
 			check(TokenType.rBrack);
 			return t;
@@ -819,13 +835,28 @@ final class Parser(AST, Lex)
 		else if (token.type == ref_of) {
 			auto loc_tmp = loc;
 			nextToken();	// get rid of #
-			auto t2 = type();
-			return new AST.PointerType(loc_tmp, t2);
+			auto t2 = dotType();
+			return new PointerType(loc_tmp, t2);
 		}
-		else return atomType();
+		else return dotType();
 	}
 
-	AST.Type atomType() {
+	// array, associative array, pointer
+	Type dotType() {
+		auto t = atomType();
+
+		with (TokenType)
+		while (token.type == dot) {
+			auto loc_tmp = loc;
+			nextToken();	// get rid of .
+			auto t2 = atomType();
+			t = new DotType(loc_tmp, t, t2);
+		}
+
+		return t;
+	}
+
+	Type atomType() {
 		with (TokenType)
 		if      (token.type == lPar) {
 			return tupleType();
@@ -843,7 +874,7 @@ final class Parser(AST, Lex)
 		}
 	}
 
-	AST.Type tupleType() {
+	Type tupleType() {
 		auto loc_tmp = loc;
 		nextToken();	// get rid of (
 
@@ -851,11 +882,11 @@ final class Parser(AST, Lex)
 		if (token.type == TokenType.rPar) {
 			nextToken();	// get rid of )
 			error("() is the literal of the type 'unit', not the type itself.");
-			return new AST.PrimitiveType(loc_tmp, TokenType.unit);
+			return new PrimitiveType(loc_tmp, TokenType.unit);
 		}
 
 		auto t1 = type();
-		AST.Type[] ts = [t1];
+		Type[] ts = [t1];
 		with (TokenType)
 		while (true) {
 			if (token.type == comma) {
@@ -871,45 +902,44 @@ final class Parser(AST, Lex)
 			}
 			ts ~= type();
 		}
-		if (ts.length > 1) return new AST.TupleType(loc_tmp, ts);
+		if (ts.length > 1) return new TupleType(loc_tmp, ts);
 		else return t1;
 	}
 
-	AST.PrimitiveType primitiveType() {
-		auto t = new AST.PrimitiveType(loc, token.type);
+	PrimitiveType primitiveType() {
+		auto t = new PrimitiveType(loc, token.type);
 		nextToken();
 		return t;
 	}
 
-	AST.IdentifierType identifierType() {
-		auto t = new AST.IdentifierType(loc, new Identifier(token.str));
+	IdentifierType identifierType() {
+		auto t = new IdentifierType(loc, new Identifier(token.str));
 		nextToken();
 		return t;
 	}
-
 
 	/* *************************************** *
 					 Declaration
 	 * *************************************** */
-	AST.LetDeclaration letDeclaration() {
+	LetDeclaration letDeclaration(Attribute attr) {
 		auto loc_tmp = loc;
 		nextToken();	// get rid of let
-		AST.Type whole_type;
+		Type whole_type;
 		// let:int a = 0, ...;
 		if (token.type == TokenType.colon) {
 			nextToken();	// get rid of :
 			whole_type = type();
 		}
 
-		AST.TypedIdentifier[] tids;
-		AST.Expression[] exprs;
+		TypedIdentifier[] tids;
+		Expression[] exprs;
 
 		with (TokenType)
 		while (token.type == identifier) {
 			auto name = token.str;
 			nextToken();	// get rid of id
-			AST.Type ind_type;
-			AST.Expression expr;
+			Type ind_type;
+			Expression expr;
 			// a : T
 			if (token.type == TokenType.colon) {
 				nextToken();	// get rid of :
@@ -921,7 +951,8 @@ final class Parser(AST, Lex)
 				expr = expression();
 			}
 
-			tids ~= new AST.TypedIdentifier(name, Attribute.none, ind_type ? ind_type : whole_type);
+			tids ~= new TypedIdentifier(name, attr, ind_type ? ind_type : whole_type);
+			if (tids[$-1].type) tids[$-1].type.attr &= (attr & Attribute.type_qualifier);
 			exprs ~= expr;
 
 			if (token.type == comma) {
@@ -937,39 +968,39 @@ final class Parser(AST, Lex)
 			}
 		}
 
-		return new AST.LetDeclaration(loc_tmp, tids, exprs);
+		return new LetDeclaration(loc_tmp, tids, exprs);
 	}
 
-	AST.FunctionDeclaration functionDeclaration() {
+	FunctionDeclaration functionDeclaration(Attribute attr) {
 		auto loc_tmp = loc;
 		nextToken();	// get rid of func
 
 		auto name = token.str;
 		check(TokenType.identifier);
 
-		AST.Type ret_type;
+		Type ret_type;
 		if (token.type == TokenType.colon) {
 			nextToken();	// get rid of :
-			ret_type = type();
+			ret_type = attributedType(Attribute.ref_);
 		}
 
-		auto id = new AST.TypedIdentifier(name, Attribute.none, ret_type);
+		auto id = new TypedIdentifier(name, Attribute.none, ret_type);
 
 		// arguments
-		AST.TypedIdentifier[] args;
+		TypedIdentifier[] args;
 		with (TokenType)
 		while (token.type.among!(identifier, any)) {
 			auto arg_name = token.str;
 			nextToken();	// get rid of id
-			AST.Type arg_type;
+			Type arg_type;
 			if (token.type == TokenType.colon) {
 				nextToken();	// get rid of :
-				arg_type = type();
+				arg_type = attributedType(Attribute.ref_ | Attribute.lazy_);
 			}
-			args ~= new AST.TypedIdentifier(arg_name, Attribute.none, arg_type);
+			args ~= new TypedIdentifier(arg_name, Attribute.none, arg_type);
 		}
 
-		AST.Expression body;
+		Expression body;
 		with (TokenType)
 		if (token.type == semicolon) {
 			nextToken();	// get rid of ;
@@ -983,7 +1014,38 @@ final class Parser(AST, Lex)
 			error("= or ; expected for the function body.");
 		}
 
-		return new AST.FunctionDeclaration(loc_tmp, Attribute.none, id, args, body);
+		return new FunctionDeclaration(loc_tmp, attr, id, args, body);
 	}
 
+	/* ********************************** *
+					 Tools
+	 * ********************************** */
+	Attribute attribute(Attribute allowed = Attribute.all) {
+		Attribute result;
+		while (true) {
+			if (token.type == TokenType.composition)
+				nextToken();	// get rid of @
+
+			auto attr = getAttribute(token);
+
+			// not an attribute allowed
+			if (!(attr & allowed)) {
+				break;
+			}
+			else {
+				// private, protected, package, public, export
+				if (result & Attribute.access_level && attr & Attribute.access_level) {
+					error("Multiple access level (private/protected/package/public/export) collision : " ~ token.str);
+				}
+				// @safe @trusted @system
+				else if (result & Attribute.function_safety && attr & Attribute.function_safety) {
+					error("Multiple function safety (@safe/@trusted/@system) collision : " ~ token.str);
+				}
+				else result |= attr;
+			}
+			nextToken();
+		}
+		return result;
+	}
 }
++/

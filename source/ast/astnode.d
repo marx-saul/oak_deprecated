@@ -1,11 +1,14 @@
 module ast.astnode;
 
-import lexer;
-import visitor: Visitor;
+import visitor.visitor: Visitor;
 
-abstract class ASTNode(AST) {
-    // for DFS visiting of the AST
-    abstract void accept(Visitor!AST v);
+abstract class ASTNode {
+    // shallow copy
+    abstract ASTNode dup();
+    // deep copy
+    abstract ASTNode copy();
+    // accept for the visitor
+    abstract void accept(Visitor v);
 }
 
 

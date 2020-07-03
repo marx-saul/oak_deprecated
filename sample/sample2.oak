@@ -14,3 +14,16 @@ immut msg5 = "message!", omega = 0.12345678910111213
 func(a, b) map:[b] f:a->b xs:[a] =
 	[]                                 when xs.length == 0 else
 	(map f xs![0 .. $-1]) ~ f xs![$-1];
+
+class A {
+	static @safe func info:unit _:unit = writeln "A";
+	@pure static func fact n = if n>0 : n * f(n-1) else 1;
+	public static immut let msg = "message!";
+	private:
+	const let a = 42;
+	public {
+		let b:static int;
+	}
+}
+
+

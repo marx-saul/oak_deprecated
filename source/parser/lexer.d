@@ -1,4 +1,4 @@
-module lexer;
+module parser.lexer;
 import std.stdio;
 import std.ascii;
 import std.algorithm;
@@ -57,6 +57,7 @@ public struct Location {
 // when adding a token, alter this enum TokenType, (reserved_words/reserved_symbols)
 enum TokenType {
 	dummy,
+
 	identifier,
 
 	integer,
@@ -73,13 +74,13 @@ enum TokenType {
 	void_,
 	unit,
 	struct_,
+	union_,
 	class_,
 	interface_,
 	immut,
 	const_,
 	inout_,
 	shadow,
-	ref_,
 	private_,
 	protected_,
 	package_,
@@ -87,8 +88,10 @@ enum TokenType {
 	export_,
 	abstract_,
 	override_,
-	pure_,
+	static_,
+	final_,
 	lazy_,
+	ref_,
 	import_,
 	module_,
 	let,
@@ -192,6 +195,7 @@ static const reserved_words = new TokenDict(
 	tuple("unit",            TokenType.unit),
 
 	tuple("struct",          TokenType.struct_),
+	tuple("union",           TokenType.union_),
 	tuple("class",           TokenType.class_),
 	tuple("interface",       TokenType.interface_),
 
@@ -206,7 +210,6 @@ static const reserved_words = new TokenDict(
 	tuple("inout",           TokenType.inout_),
 
 	tuple("shadow",          TokenType.shadow),
-	tuple("ref",             TokenType.ref_),
 
 	tuple("private",         TokenType.private_),
 	tuple("protected",       TokenType.protected_),
@@ -215,6 +218,11 @@ static const reserved_words = new TokenDict(
 	tuple("export",          TokenType.export_),
 	tuple("abstract",        TokenType.abstract_),
 	tuple("override",        TokenType.override_),
+
+	tuple("static",          TokenType.static_),
+	tuple("final",           TokenType.final_),
+	tuple("ref",             TokenType.ref_),
+	tuple("lazy",            TokenType.lazy_),
 
 	tuple("_",               TokenType.any),
 	tuple("this",            TokenType.this_),
@@ -330,7 +338,6 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 	if (isInputRange!Range && is(typeof(input.front) : immutable dchar))
 {
 	enum EOF = cast(dchar) -1;
-	
 	
 	// wrapper for EOF and look-ahead
 	dchar nextChar() {
@@ -638,13 +645,13 @@ Token nextToken(Range)(ref Range input, ref immutable(dchar)[] lookahead, ref ul
 	return token;
 }
 
-
 /* token pusher */
 enum isLexer(T) =
-	is(ReturnType!((T t) => t.front) == Token) &&
+	is(ReturnType!((T t) => t.front) == Token)
 	//is(ReturnType!((T t) => t.empty) == bool) &&
-	is( typeof( { T t; t.popFront(); } ) ) &&
-	is(ReturnType!((T t) => t.lookahead) == Token);
+ && is( typeof( { T t; t.popFront(); } ) )
+ && is(ReturnType!((T t) => t.lookahead) == Token)
+ && is(ReturnType!((T t) => t.loc) == Location);
 
 class Lexer(R)
 	if (isInputRange!R && is(ReturnType!((R r) => r.front) : immutable dchar))
@@ -654,25 +661,35 @@ class Lexer(R)
 	ulong line_num = 1, index_num = 1;
 	this (R s) {
 		source = s;
-		token = nextToken(source, char_lookahead, line_num, index_num);
+		_token = parser.lexer.nextToken(source, char_lookahead, line_num, index_num);
 	}
 
-	private Token token;
+	private Token _token;
 	private Token token_ahead;
 	private bool looked_ahead = false;
 	Token front() @property {
-		return token;
+		return _token;
 	}
 	void popFront() {
 		if (looked_ahead) {
-			token = token_ahead;
+			_token = token_ahead;
 		}
-		else token = nextToken(source, char_lookahead, line_num, index_num);
+		else _token = parser.lexer.nextToken(source, char_lookahead, line_num, index_num);
 		looked_ahead = false;
 	}
 	Token lookahead() @property {
 		if (looked_ahead) return token_ahead;
-		else return token;
+		else {
+			token_ahead = parser.lexer.nextToken(source, char_lookahead, line_num, index_num);
+			looked_ahead = true;
+			return token_ahead;
+		}
+	}
+	
+	alias token = front;
+	void nextToken() { popFront(); }
+	Location loc() @property {
+		return _token.loc;
 	}
 }
 
